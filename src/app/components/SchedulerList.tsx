@@ -19,7 +19,7 @@ import { toast } from 'sonner@2.0.3';
 import { normalizeTimeTo12Hour } from '../utils/timeFormat';
 import { formatListCreatedDate, parseListDateValue } from '../utils/listDateFormat';
 import { formatListResultsText } from '../utils/listResultsText';
-import { RULE_BRAND_OPTIONS, RULE_PICKUP_LOCATION_OPTIONS } from '../constants/ruleDefineOptions';
+import { RULE_BRAND_OPTIONS } from '../constants/ruleDefineOptions';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -183,8 +183,6 @@ function getSchedulerFieldValues(scheduler: any, field: keyof SchedulerFilterSta
       return scheduler.scheduleTime ? [scheduler.scheduleTime] : [];
     case 'pickupLocation':
       return normalizeValues(scheduler.pickupLocation);
-    case 'productLocation':
-      return normalizeValues(scheduler.productLocation);
     case 'dropoffLocation':
       return normalizeValues(scheduler.dropOffLocation);
     case 'productCode':
@@ -239,13 +237,6 @@ function buildFilterOptions(schedulers: any[]): SchedulerFilterOptions {
   });
   options.brand.sort((a, b) => a.localeCompare(b));
 
-  RULE_PICKUP_LOCATION_OPTIONS.forEach((location) => {
-    if (!options.productLocation.includes(location)) {
-      options.productLocation.push(location);
-    }
-  });
-  options.productLocation.sort((a, b) => a.localeCompare(b));
-
   return options;
 }
 
@@ -273,7 +264,6 @@ const FILTER_LABELS: Record<keyof SchedulerFilterState, string> = {
   occurrence: 'Occurrence',
   scheduleTime: 'Schedule Time',
   pickupLocation: 'Pickup Location',
-  productLocation: 'Product Location',
   dropoffLocation: 'Dropoff Location',
   productCode: 'Product Code',
   lor: 'LOR',

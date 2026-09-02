@@ -17,7 +17,6 @@ export type SchedulerFilterState = {
   occurrence: string[];
   scheduleTime: string[];
   pickupLocation: string[];
-  productLocation: string[];
   dropoffLocation: string[];
   productCode: string[];
   lor: string[];
@@ -39,7 +38,6 @@ export const emptySchedulerFilters = (): SchedulerFilterState => ({
   occurrence: [],
   scheduleTime: [],
   pickupLocation: [],
-  productLocation: [],
   dropoffLocation: [],
   productCode: [],
   lor: [],
@@ -57,7 +55,6 @@ export const SCHEDULER_FILTER_FIELDS: { key: keyof SchedulerFilterState; label: 
   { key: 'occurrence', label: 'Occurrence', placeholder: 'Select occurrences' },
   { key: 'scheduleTime', label: 'Schedule Time', placeholder: 'Select schedule times' },
   { key: 'pickupLocation', label: 'Pickup Location', placeholder: 'Select pickup locations' },
-  { key: 'productLocation', label: 'Product Location', placeholder: 'Select product locations' },
   { key: 'dropoffLocation', label: 'Dropoff Location', placeholder: 'Select dropoff locations' },
   { key: 'productCode', label: 'Product Code', placeholder: 'Select product codes' },
   { key: 'lor', label: 'LOR', placeholder: 'Select LOR values' },
@@ -69,7 +66,7 @@ export const SCHEDULER_FILTER_FIELDS: { key: keyof SchedulerFilterState; label: 
   { key: 'dropoffTime', label: 'Dropoff Time', placeholder: 'Select dropoff times' },
 ];
 
-export const SCHEDULER_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productLocation'] as const satisfies readonly (keyof SchedulerFilterState)[];
+export const SCHEDULER_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productCode'] as const satisfies readonly (keyof SchedulerFilterState)[];
 
 export const SCHEDULER_PRIMARY_FILTER_FIELDS = SCHEDULER_FILTER_FIELDS.filter((field) =>
   (SCHEDULER_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)
