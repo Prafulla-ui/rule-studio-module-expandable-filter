@@ -12,6 +12,7 @@ interface MultiSelectProps {
   disabled?: boolean;
   hasError?: boolean;
   selectAllLabel?: string;
+  compact?: boolean;
 }
 
 export function MultiSelect({
@@ -23,6 +24,7 @@ export function MultiSelect({
   disabled = false,
   hasError = false,
   selectAllLabel = 'Select All',
+  compact = false,
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,11 +65,11 @@ export function MultiSelect({
 
   const renderTriggerContent = () => {
     if (value.length === 0) {
-      return <span className="text-gray-400">{placeholder}</span>;
+      return <span className="text-gray-400 whitespace-nowrap">{placeholder}</span>;
     }
 
     return (
-      <span className={disabled ? 'text-gray-500' : 'text-gray-900'}>
+      <span className={`${disabled ? 'text-gray-500' : 'text-gray-900'} ${compact ? 'truncate' : ''}`}>
         {getDisplayText()}
       </span>
     );
@@ -79,7 +81,9 @@ export function MultiSelect({
         <button
           type="button"
           disabled={disabled}
-          className={`w-full min-h-7 h-auto border rounded px-3 py-1.5 text-left flex items-center justify-between transition-colors text-sm ${
+          className={`w-full border rounded px-3 text-left flex items-center justify-between transition-colors text-sm ${
+            compact ? 'h-7 min-h-7 py-0' : 'min-h-7 h-auto py-1.5'
+          } ${
             disabled 
               ? 'bg-gray-100 cursor-not-allowed text-gray-500 opacity-100 border-[#ced4da]' 
               : hasError
@@ -87,7 +91,9 @@ export function MultiSelect({
                 : 'bg-white hover:bg-gray-50 cursor-pointer border-[#ced4da]'
           } ${className}`}
         >
-          {renderTriggerContent()}
+          <span className="min-w-0 flex-1 overflow-hidden">
+            {renderTriggerContent()}
+          </span>
           <ChevronDown className={`h-4 w-4 flex-shrink-0 ml-2 ${disabled ? 'text-gray-400' : 'text-gray-500'}`} />
         </button>
       </PopoverTrigger>

@@ -1,21 +1,25 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Edit, Trash2, Plus, LayoutGrid, X, Info, Copy, ChevronsRight, ChevronsLeft } from 'lucide-react';
+import { Search, Edit, Trash2, Plus, LayoutGrid, X, Info, Copy, ChevronsRight, ChevronsLeft, ChevronDown } from 'lucide-react';
 import { CustomButton } from './CustomButton';
 import { toast } from 'sonner@2.0.3';
 import { RuleEditDrawer } from './RuleEditDrawer';
 import { SchedulerList } from './SchedulerList';
 import {
-  RuleFilterDrawer,
   emptyRuleFilters,
+  RULE_MORE_FILTER_FIELDS,
+  RULE_PRIMARY_FILTER_FIELDS,
   type RuleFilterState,
   type RuleFilterOptions,
 } from './RuleFilterDrawer';
+import { RuleFilterPanel } from './RuleFilterPanel';
+import { MultiSelect } from './MultiSelect';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Switch } from './ui/switch';
 import { CustomSelect } from './CustomSelect';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { applyImportValidation } from '../utils/schedulerImportValidation';
 import { formatListCreatedDate } from '../utils/listDateFormat';
+import { formatListResultsText } from '../utils/listResultsText';
 import { RULE_BRAND_OPTIONS } from '../constants/ruleDefineOptions';
 import {
   AlertDialog,
@@ -99,9 +103,15 @@ function RuleListMultiValueCell({ values }: { values: string[] }) {
   );
 }
 
+function countActiveFilterFieldsForKeys<T extends Record<string, string[]>>(
+  filters: T,
+  keys: readonly (keyof T)[]
+): number {
+  return keys.filter((key) => filters[key].length > 0).length;
+}
+
 const STICKY_COL_RULE_NAME = 'sticky left-0 z-20 w-[220px] min-w-[220px] max-w-[220px]';
 const STICKY_COL_RULE_NAME_HEAD = 'sticky left-0 z-30 w-[220px] min-w-[220px] max-w-[220px]';
-const STICKY_SHADOW = 'border-r border-gray-200 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.08)]';
 
 function getRulePickupLocations(rule: Rule): string[] {
   if (rule.pickupLocation?.length) {
@@ -162,6 +172,35 @@ function getRuleCarCodeValues(rule: Rule): string[] {
     return rule.fleetTypes;
   }
   return [];
+}
+
+function ruleMatchesSearch(rule: Rule, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const searchableText = [
+    rule.name,
+    rule.condition,
+    rule.action,
+    getRuleBrand(rule),
+    ...getRulePickupLocations(rule),
+    ...getRuleDropoffLocations(rule),
+    getRuleProductCode(rule),
+    ...getRuleLorValues(rule),
+    ...getRuleCarCodeValues(rule),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return searchableText.includes(normalizedQuery);
+}
+
+function ruleMatchesRefinements(rule: Rule, searchQuery: string, appliedFilters: RuleFilterState): boolean {
+  if (!ruleMatchesSearch(rule, searchQuery)) {
+    return false;
+  }
+
+  return ruleMatchesFilters(rule, appliedFilters);
 }
 
 function getRuleFieldValues(rule: Rule, field: keyof RuleFilterState): string[] {
@@ -233,8 +272,8 @@ function countActiveRuleFilterFields(filters: RuleFilterState): number {
 const RULE_FILTER_LABELS: Record<keyof RuleFilterState, string> = {
   ruleName: 'Rule Name',
   brand: 'Brand',
-  pickupLocation: 'PickUp',
-  dropoffLocation: 'Dropoff',
+  pickupLocation: 'Pickup Location',
+  dropoffLocation: 'Dropoff Location',
   productCode: 'Product Code',
   lor: 'LOR',
   carCode: 'Car Code',
@@ -263,8 +302,7 @@ interface RuleListProps {
 
 export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdateRule, onEdit, onCreateRule, onDuplicateRule, lastCreatedRuleId, onHighlightConsumed, onCreateScheduler, onUpdateScheduler, onDeleteScheduler, onBulkUpdateSchedulers, onBulkDeleteSchedulers }: RuleListProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [draftFilters, setDraftFilters] = useState<RuleFilterState>(emptyRuleFilters());
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<RuleFilterState>(emptyRuleFilters());
   const [activeTab, setActiveTab] = useState('manage-scheduler');
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
@@ -359,30 +397,31 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
   const inactiveRuleCount = displayRules.length - activeRuleCount;
 
   const filterOptions = useMemo(() => buildRuleFilterOptions(displayRules), [displayRules]);
+  const hasListRefinements = searchQuery.trim().length > 0 || hasAnyActiveRuleFilters(appliedFilters);
+
+  const rulesMatchingRefinements = useMemo(() => {
+    return displayRules.filter((rule) => ruleMatchesRefinements(rule, searchQuery, appliedFilters));
+  }, [displayRules, searchQuery, appliedFilters]);
+
+  const activeFilteredRuleCount = useMemo(
+    () => rulesMatchingRefinements.filter((rule) => isRuleActive(rule.status)).length,
+    [rulesMatchingRefinements]
+  );
+  const inactiveFilteredRuleCount = rulesMatchingRefinements.length - activeFilteredRuleCount;
 
   const filteredRules = useMemo(() => {
-    return displayRules.filter((rule) => {
+    return rulesMatchingRefinements.filter((rule) => {
       if (ruleStatusTab === 'active' && !isRuleActive(rule.status)) {
         return false;
       }
       if (ruleStatusTab === 'inactive' && isRuleActive(rule.status)) {
         return false;
       }
-
-      if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        const matchesSearch =
-          rule.name.toLowerCase().includes(query) ||
-          rule.condition.toLowerCase().includes(query) ||
-          rule.action.toLowerCase().includes(query);
-        if (!matchesSearch) {
-          return false;
-        }
-      }
-
-      return ruleMatchesFilters(rule, appliedFilters);
+      return true;
     });
-  }, [displayRules, ruleStatusTab, searchQuery, appliedFilters]);
+  }, [rulesMatchingRefinements, ruleStatusTab]);
+
+  const statusTotalRuleCount = ruleStatusTab === 'active' ? activeRuleCount : inactiveRuleCount;
 
   const hasActiveFilters = hasAnyActiveRuleFilters(appliedFilters);
   const activeFilterCount = countActiveRuleFilterFields(appliedFilters);
@@ -444,33 +483,42 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
     onDuplicateRule?.(rule);
   };
 
-  const handleOpenFilterDrawer = () => {
-    setDraftFilters({ ...appliedFilters });
-    setFilterDrawerOpen(true);
+  const activeMoreFilterCount = useMemo(
+    () => countActiveFilterFieldsForKeys(appliedFilters, RULE_MORE_FILTER_FIELDS.map((field) => field.key)),
+    [appliedFilters]
+  );
+
+  const handleToggleMoreFilters = () => {
+    setFilterPanelOpen((open) => !open);
   };
 
-  const handleApplyFilters = () => {
-    setAppliedFilters({ ...draftFilters });
-    setFilterDrawerOpen(false);
+  const handleMoreFilterChange = (key: keyof RuleFilterState, value: string[]) => {
+    setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
-  const handleResetFilters = () => {
-    setDraftFilters(emptyRuleFilters());
+  const handleResetMoreFilters = () => {
+    const nextApplied = { ...appliedFilters };
+    RULE_MORE_FILTER_FIELDS.forEach(({ key }) => {
+      nextApplied[key] = [];
+    });
+    setAppliedFilters(nextApplied);
+  };
+
+  const handlePrimaryFilterChange = (key: keyof RuleFilterState, value: string[]) => {
+    setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
   const handleClearFilters = () => {
-    const empty = emptyRuleFilters();
-    setAppliedFilters(empty);
-    setDraftFilters(empty);
+    setAppliedFilters(emptyRuleFilters());
+    setSearchQuery('');
+    setFilterPanelOpen(false);
   };
 
   const handleRemoveFilterChip = (field: keyof RuleFilterState, value: string) => {
-    const nextApplied = {
+    setAppliedFilters({
       ...appliedFilters,
       [field]: appliedFilters[field].filter((item) => item !== value),
-    };
-    setAppliedFilters(nextApplied);
-    setDraftFilters(nextApplied);
+    });
   };
 
   const isRuleToggleOn = (status: string) => isRuleActive(status);
@@ -807,115 +855,152 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
             <>
               {/* Filter Section - Only show on Manage Rules tab */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-          {/* Filters Row */}
-          <div className="mb-4">
-            <div className="flex items-end gap-2">
-              {/* Search */}
-              <div className="max-w-md flex-1">
-                <label className="block text-xs text-[#666666] mb-1.5 h-[14px]">Search Rules</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search by name"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-7 pl-3 pr-9 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
-                  />
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                </div>
-              </div>
-              {/* Filter Button */}
-              <div className="flex items-center gap-2">
-                <CustomButton
-                  variant="outline"
-                  size="sm"
-                  onClick={handleOpenFilterDrawer}
-                  className={`rounded ${hasActiveFilters ? 'border-[#ff9800] bg-orange-50' : ''}`}
-                >
-                  <Filter className={`h-4 w-4 ${hasActiveFilters ? 'text-[#ff9800]' : ''}`} />
-                  Filter
-                  {hasActiveFilters && (
-                    <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </CustomButton>
-                {hasActiveFilters && (
-                  <button
-                    type="button"
-                    onClick={handleClearFilters}
-                    className="inline-flex items-center gap-1 h-7 px-2 text-xs text-[#ff9800] hover:text-[#f57c00] hover:bg-orange-50 rounded transition-colors"
-                    aria-label="Clear all filters"
+            <div className="flex flex-wrap items-end gap-3 w-full">
+                {RULE_PRIMARY_FILTER_FIELDS.map(({ key, label, placeholder }) => (
+                  <div key={key} className="flex-1 min-w-[200px]">
+                    <label className="block text-xs text-[#666666] mb-1.5 h-[14px] whitespace-nowrap truncate" title={label}>
+                      {label}
+                    </label>
+                    <MultiSelect
+                      value={appliedFilters[key]}
+                      onChange={(value) => handlePrimaryFilterChange(key, value)}
+                      options={filterOptions[key]}
+                      placeholder={placeholder}
+                      disabled={filterOptions[key].length === 0}
+                      compact
+                    />
+                  </div>
+                ))}
+                <div className="shrink-0">
+                  <label className="block text-xs text-transparent mb-1.5 h-[14px] select-none">More</label>
+                  <CustomButton
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleMoreFilters}
+                    className={`group rounded ${filterPanelOpen || activeMoreFilterCount > 0 ? 'border-[#ff9800] bg-orange-50' : ''}`}
                   >
-                    <X className="h-3.5 w-3.5" />
-                    Clear filters
-                  </button>
-                )}
-              </div>
+                    <ChevronDown className={`h-4 w-4 transition-transform group-hover:text-white ${filterPanelOpen ? 'rotate-180 text-[#ff9800]' : activeMoreFilterCount > 0 ? 'text-[#ff9800]' : ''}`} />
+                    More filters
+                    {activeMoreFilterCount > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
+                        {activeMoreFilterCount}
+                      </span>
+                    )}
+                  </CustomButton>
+                </div>
             </div>
-          </div>
 
-          {/* Results */}
-          <div className="pt-3 border-t border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex">
-              <button
-                type="button"
-                onClick={() => setRuleStatusTab('active')}
-                className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                  ruleStatusTab === 'active'
-                    ? 'text-[#ff9800] border-b-2 border-[#ff9800]'
-                    : 'text-[#666666] hover:text-[#ff9800]'
-                }`}
-              >
-                Active ({activeRuleCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setRuleStatusTab('inactive')}
-                className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                  ruleStatusTab === 'inactive'
-                    ? 'text-[#ff9800] border-b-2 border-[#ff9800]'
-                    : 'text-[#666666] hover:text-[#ff9800]'
-                }`}
-              >
-                Inactive ({inactiveRuleCount})
-              </button>
-            </div>
-            <p className="text-sm text-[#666666]">
-              {filteredRules.length === 0
-                ? `Showing 0 of ${ruleStatusTab === 'active' ? activeRuleCount : inactiveRuleCount} ${ruleStatusTab} rules`
-                : `Showing ${startIndex + 1} - ${Math.min(startIndex + itemsPerPage, filteredRules.length)} of ${filteredRules.length} ${ruleStatusTab} rule${filteredRules.length === 1 ? '' : 's'}`}
-              {hasActiveFilters && (
-                <span className="text-[#ff9800]">
-                  {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
-                </span>
-              )}
-            </p>
-          </div>
+          <RuleFilterPanel
+            isOpen={filterPanelOpen}
+            options={filterOptions}
+            filters={appliedFilters}
+            onFilterChange={handleMoreFilterChange}
+            onReset={handleResetMoreFilters}
+          />
 
           {activeFilterChips.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
-              {activeFilterChips.map((chip) => (
-                <button
-                  key={`${chip.field}-${chip.value}`}
-                  type="button"
-                  onClick={() => handleRemoveFilterChip(chip.field, chip.value)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs text-[#a65a00] hover:bg-orange-100 transition-colors"
-                  title="Remove filter"
-                >
-                  <span>{chip.label}</span>
-                  <X className="h-3 w-3" />
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap items-center gap-2">
+                {activeFilterChips.map((chip) => (
+                  <button
+                    key={`${chip.field}-${chip.value}`}
+                    type="button"
+                    onClick={() => handleRemoveFilterChip(chip.field, chip.value)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs text-[#a65a00] hover:bg-orange-100 transition-colors"
+                    title="Remove filter"
+                  >
+                    <span>{chip.label}</span>
+                    <X className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="inline-flex items-center gap-1 h-7 px-2 text-xs text-[#ff9800] hover:text-[#f57c00] hover:bg-orange-50 rounded transition-colors shrink-0"
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear all
+              </button>
             </div>
           )}
+
         </div>
+
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+            <div
+              className="inline-flex items-center p-1 h-9 rounded-lg bg-gray-100 border border-gray-300 shrink-0"
+              role="tablist"
+              aria-label="Rule status"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={ruleStatusTab === 'active'}
+                onClick={() => setRuleStatusTab('active')}
+                className={`h-7 px-4 text-sm font-medium rounded-md transition-all whitespace-nowrap inline-flex items-center ${
+                  ruleStatusTab === 'active'
+                    ? 'bg-white text-[#ff9800] shadow-sm'
+                    : 'text-[#666666] hover:text-[#2c3e50]'
+                }`}
+              >
+                Active ({activeFilteredRuleCount})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={ruleStatusTab === 'inactive'}
+                onClick={() => setRuleStatusTab('inactive')}
+                className={`h-7 px-4 text-sm font-medium rounded-md transition-all whitespace-nowrap inline-flex items-center ${
+                  ruleStatusTab === 'inactive'
+                    ? 'bg-white text-[#ff9800] shadow-sm'
+                    : 'text-[#666666] hover:text-[#2c3e50]'
+                }`}
+              >
+                Inactive ({inactiveFilteredRuleCount})
+              </button>
+            </div>
+
+            <div className="hidden lg:block w-px h-9 bg-gray-300 shrink-0" aria-hidden="true" />
+
+            <div className="relative w-full sm:w-[340px] shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <input
+                type="search"
+                aria-label="Search rules in current tab"
+                placeholder="Search by rule, brand, location name"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-9 pl-9 pr-3 border border-gray-300 bg-white rounded text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
+              />
+            </div>
+
+            <p className="text-xs sm:text-sm text-[#666666] shrink-0 lg:text-right lg:ml-auto">
+              {formatListResultsText({
+                startIndex,
+                itemsPerPage,
+                filteredCount: filteredRules.length,
+                statusTotalCount: statusTotalRuleCount,
+                statusLabel: ruleStatusTab,
+                hasRefinements: hasListRefinements,
+                entityLabel: 'rule',
+              })}
+                {hasActiveFilters && (
+                  <span className="text-[#ff9800]">
+                    {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
+                  </span>
+                )}
+              </p>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
 
       {/* Card View */}
        {viewMode === 'card' && (
-        <div className="space-y-3">
+        <div className="p-4 space-y-3 bg-white">
           {paginatedRules.length === 0 ? (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-12 text-center text-gray-500">
+            <div className="px-4 py-12 text-center text-gray-500">
               No {ruleStatusTab} rules found. {(searchQuery || hasActiveFilters) && 'Try adjusting your search or filters.'}
             </div>
           ) : (
@@ -974,7 +1059,7 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
 
       {/* Table View */}
       {viewMode === 'list' && (
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200 relative">
+      <div className="relative bg-white">
         {showRightArrow && (
           <div className="absolute top-0 right-0 h-11 w-16 z-10 pointer-events-none">
             <div className="absolute inset-0 bg-gradient-to-l from-white via-white/95 to-transparent" />
@@ -998,7 +1083,7 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
           <table className="w-full border-separate border-spacing-0">
             <thead className="sticky top-0 z-20">
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className={`px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap ${STICKY_COL_RULE_NAME_HEAD} ${STICKY_SHADOW} bg-gray-50`}>
+                <th className={`px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap ${STICKY_COL_RULE_NAME_HEAD} bg-gray-50`}>
                   Rule Name
                 </th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Brand</th>
@@ -1030,7 +1115,7 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
                       isHighlighted ? 'bg-orange-50 border-l-4 border-l-[#ff9800]' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <td className={`px-4 py-3 text-sm text-gray-900 ${STICKY_COL_RULE_NAME} ${STICKY_SHADOW} ${stickyBg}`}>
+                    <td className={`px-4 py-3 text-sm text-gray-900 ${STICKY_COL_RULE_NAME} ${stickyBg}`}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="block min-w-0 truncate font-medium text-left">
@@ -1175,6 +1260,8 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
         )}
       </div>
       )}
+          </div>
+        </div>
             </>
           )}
         </>
@@ -1186,16 +1273,6 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
         rule={editingRule}
         onSave={handleSaveEdit}
       />
-      <RuleFilterDrawer
-        isOpen={filterDrawerOpen}
-        onClose={() => setFilterDrawerOpen(false)}
-        options={filterOptions}
-        draftFilters={draftFilters}
-        onDraftChange={setDraftFilters}
-        onApply={handleApplyFilters}
-        onReset={handleResetFilters}
-      />
-
       {/* Single Activate / Deactivate Confirmation Dialog */}
       <AlertDialog
         open={singleRuleStatusDialogOpen}

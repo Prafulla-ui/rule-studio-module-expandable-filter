@@ -37,16 +37,26 @@ export const emptyRuleFilters = (): RuleFilterState => ({
   createdDate: [],
 });
 
-const FILTER_FIELDS: { key: keyof RuleFilterState; label: string; placeholder: string }[] = [
+export const RULE_FILTER_FIELDS: { key: keyof RuleFilterState; label: string; placeholder: string }[] = [
   { key: 'ruleName', label: 'Rule Name', placeholder: 'Select rule names' },
   { key: 'brand', label: 'Brand', placeholder: 'Select brands' },
-  { key: 'pickupLocation', label: 'PickUp Location', placeholder: 'Select pickup locations' },
+  { key: 'pickupLocation', label: 'Pickup Location', placeholder: 'Select pickup locations' },
   { key: 'dropoffLocation', label: 'Dropoff Location', placeholder: 'Select dropoff locations' },
   { key: 'productCode', label: 'Product Code', placeholder: 'Select product codes' },
   { key: 'lor', label: 'LOR', placeholder: 'Select LOR values' },
   { key: 'carCode', label: 'Car Code', placeholder: 'Select car codes' },
   { key: 'createdDate', label: 'Created Date', placeholder: 'Select created dates' },
 ];
+
+export const RULE_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productCode'] as const satisfies readonly (keyof RuleFilterState)[];
+
+export const RULE_PRIMARY_FILTER_FIELDS = RULE_FILTER_FIELDS.filter((field) =>
+  (RULE_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)
+);
+
+export const RULE_MORE_FILTER_FIELDS = RULE_FILTER_FIELDS.filter(
+  (field) => !(RULE_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)
+);
 
 interface RuleFilterDrawerProps {
   isOpen: boolean;
@@ -93,7 +103,7 @@ export function RuleFilterDrawer({
 
           <div className="flex-1 overflow-y-auto px-6 py-6 bg-white">
             <div className="grid grid-cols-2 gap-4">
-              {FILTER_FIELDS.map(({ key, label, placeholder }) => (
+              {RULE_FILTER_FIELDS.map(({ key, label, placeholder }) => (
                 <div key={key}>
                   <label className="block text-xs text-[#666666] mb-1.5">{label}</label>
                   <MultiSelect

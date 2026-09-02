@@ -4,7 +4,7 @@ const LIST_CREATED_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
   day: 'numeric',
 };
 
-function parseListDateValue(value: string): Date | null {
+export function parseListDateValue(value: string): Date | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 

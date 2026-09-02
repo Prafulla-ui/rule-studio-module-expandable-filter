@@ -509,7 +509,7 @@ export function SchedulerBulkEditDrawer({
             <Section title="Location & Product">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-[#666666] mb-1.5">Pickup</label>
+                  <label className="block text-xs text-[#666666] mb-1.5">Pickup Location</label>
                   <MultiSelect
                     value={form.pickupLocation}
                     onChange={(value) => setForm({ ...form, pickupLocation: value })}

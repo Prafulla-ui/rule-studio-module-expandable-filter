@@ -706,7 +706,7 @@ function enrichRule(base: BaseSampleRule) {
 const baseSampleRules: BaseSampleRule[] = [
   {
     id: '21',
-    name: 'Hover Demo — Pickup Locations',
+    name: 'Airport Pickup Premium Rate',
     status: 'active',
     fleetTypes: ['Sedan', 'SUV'],
     location: 'LAS-LAS',
@@ -722,7 +722,7 @@ const baseSampleRules: BaseSampleRule[] = [
   },
   {
     id: '22',
-    name: 'Hover Demo — Drop-off Locations',
+    name: 'One-Way Drop-off Surcharge',
     status: 'active',
     fleetTypes: ['Sedan', 'Compact'],
     location: 'Chicago',
@@ -738,7 +738,7 @@ const baseSampleRules: BaseSampleRule[] = [
   },
   {
     id: '23',
-    name: 'Hover Demo — LOR & Car Code',
+    name: 'Extended LOR Car Class Pricing',
     status: 'active',
     fleetTypes: ['SUV', 'Luxury'],
     location: 'Miami',
@@ -754,7 +754,7 @@ const baseSampleRules: BaseSampleRule[] = [
   },
   {
     id: '24',
-    name: 'Hover Demo — Scrollable Tooltip',
+    name: 'Multi-Location Fleet Adjustment',
     status: 'active',
     fleetTypes: ['All Fleet Types'],
     location: 'Denver',

@@ -14,10 +14,10 @@ import { MultiSelect } from './MultiSelect';
 export type SchedulerFilterState = {
   scheduleName: string[];
   brand: string[];
-  startDate: string[];
   occurrence: string[];
   scheduleTime: string[];
   pickupLocation: string[];
+  productLocation: string[];
   dropoffLocation: string[];
   productCode: string[];
   lor: string[];
@@ -36,10 +36,10 @@ export type SchedulerFilterOptions = {
 export const emptySchedulerFilters = (): SchedulerFilterState => ({
   scheduleName: [],
   brand: [],
-  startDate: [],
   occurrence: [],
   scheduleTime: [],
   pickupLocation: [],
+  productLocation: [],
   dropoffLocation: [],
   productCode: [],
   lor: [],
@@ -51,13 +51,13 @@ export const emptySchedulerFilters = (): SchedulerFilterState => ({
   dropoffTime: [],
 });
 
-const FILTER_FIELDS: { key: keyof SchedulerFilterState; label: string; placeholder: string }[] = [
+export const SCHEDULER_FILTER_FIELDS: { key: keyof SchedulerFilterState; label: string; placeholder: string }[] = [
   { key: 'scheduleName', label: 'Schedule Name', placeholder: 'Select schedule names' },
   { key: 'brand', label: 'Brand', placeholder: 'Select brands' },
-  { key: 'startDate', label: 'Start Date', placeholder: 'Select start dates' },
   { key: 'occurrence', label: 'Occurrence', placeholder: 'Select occurrences' },
   { key: 'scheduleTime', label: 'Schedule Time', placeholder: 'Select schedule times' },
-  { key: 'pickupLocation', label: 'PickUp Location', placeholder: 'Select pickup locations' },
+  { key: 'pickupLocation', label: 'Pickup Location', placeholder: 'Select pickup locations' },
+  { key: 'productLocation', label: 'Product Location', placeholder: 'Select product locations' },
   { key: 'dropoffLocation', label: 'Dropoff Location', placeholder: 'Select dropoff locations' },
   { key: 'productCode', label: 'Product Code', placeholder: 'Select product codes' },
   { key: 'lor', label: 'LOR', placeholder: 'Select LOR values' },
@@ -65,9 +65,19 @@ const FILTER_FIELDS: { key: keyof SchedulerFilterState; label: string; placehold
   { key: 'dataSource', label: 'Data Sources', placeholder: 'Select data sources' },
   { key: 'dateRangeFixed', label: 'Date Range Fixed', placeholder: 'Select fixed date ranges' },
   { key: 'dateRangeDaysOut', label: 'Date Range Days Out', placeholder: 'Select days out values' },
-  { key: 'pickupTime', label: 'PickUp Time', placeholder: 'Select pickup times' },
+  { key: 'pickupTime', label: 'Pickup Time', placeholder: 'Select pickup times' },
   { key: 'dropoffTime', label: 'Dropoff Time', placeholder: 'Select dropoff times' },
 ];
+
+export const SCHEDULER_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productLocation'] as const satisfies readonly (keyof SchedulerFilterState)[];
+
+export const SCHEDULER_PRIMARY_FILTER_FIELDS = SCHEDULER_FILTER_FIELDS.filter((field) =>
+  (SCHEDULER_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)
+);
+
+export const SCHEDULER_MORE_FILTER_FIELDS = SCHEDULER_FILTER_FIELDS.filter(
+  (field) => !(SCHEDULER_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)
+);
 
 interface SchedulerFilterDrawerProps {
   isOpen: boolean;
@@ -114,7 +124,7 @@ export function SchedulerFilterDrawer({
 
           <div className="flex-1 overflow-y-auto px-6 py-6 bg-white">
             <div className="grid grid-cols-2 gap-4">
-              {FILTER_FIELDS.map(({ key, label, placeholder }) => (
+              {SCHEDULER_FILTER_FIELDS.map(({ key, label, placeholder }) => (
                 <div key={key}>
                   <label className="block text-xs text-[#666666] mb-1.5">{label}</label>
                   <MultiSelect

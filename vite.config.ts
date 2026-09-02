@@ -35,13 +35,13 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/rule-studio-module-2/' : '/',
   server: {
     host: true,
-    port: 3000,
+    port: 3001,
     strictPort: true,
     open: '/',
   },
   preview: {
     host: '127.0.0.1',
-    port: 3000,
+    port: 3001,
     strictPort: true,
     open: true,
   },

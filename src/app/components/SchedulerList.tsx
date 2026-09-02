@@ -1,21 +1,25 @@
 import { useState, useMemo, useEffect } from 'react';
 import { CustomButton } from './CustomButton';
-import { Filter, Search, Calendar, Info, Plus, Edit, ChevronsRight, ChevronsLeft, X, AlertTriangle, Archive, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { SchedulerEditDrawer } from './SchedulerEditDrawer';
+import { Search, Calendar, Info, Plus, Edit, ChevronsRight, ChevronsLeft, X, AlertTriangle, Archive, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown } from 'lucide-react';
 import { SchedulerBulkEditDrawer, type BulkEditUpdates } from './SchedulerBulkEditDrawer';
 import {
-  SchedulerFilterDrawer,
   emptySchedulerFilters,
+  SCHEDULER_MORE_FILTER_FIELDS,
+  SCHEDULER_PRIMARY_FILTER_FIELDS,
   type SchedulerFilterState,
   type SchedulerFilterOptions,
 } from './SchedulerFilterDrawer';
+import { SchedulerFilterPanel } from './SchedulerFilterPanel';
+import { MultiSelect } from './MultiSelect';
+import { SchedulerEditDrawer } from './SchedulerEditDrawer';
 import { Switch } from './ui/switch';
 import { Checkbox } from './ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { toast } from 'sonner@2.0.3';
 import { normalizeTimeTo12Hour } from '../utils/timeFormat';
-import { formatListCreatedDate } from '../utils/listDateFormat';
-import { RULE_BRAND_OPTIONS } from '../constants/ruleDefineOptions';
+import { formatListCreatedDate, parseListDateValue } from '../utils/listDateFormat';
+import { formatListResultsText } from '../utils/listResultsText';
+import { RULE_BRAND_OPTIONS, RULE_PICKUP_LOCATION_OPTIONS } from '../constants/ruleDefineOptions';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -25,13 +29,81 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 
-const ARCHIVE_UNUSED_DAYS = 90;
-type BrandSortDirection = 'asc' | 'desc' | null;
+function countActiveFilterFieldsForKeys<T extends Record<string, string[]>>(
+  filters: T,
+  keys: readonly (keyof T)[]
+): number {
+  return keys.filter((key) => filters[key].length > 0).length;
+}
 
-function compareSchedulerBrand(a: string, b: string, direction: 'asc' | 'desc'): number {
+const ARCHIVE_UNUSED_DAYS = 90;
+type SchedulerSortColumn = 'name' | 'brand' | 'createdDate';
+type SortDirection = 'asc' | 'desc';
+
+function compareSchedulerBrand(a: string, b: string, direction: SortDirection): number {
   const normalize = (value: string) => (value === '—' ? '' : value.toLowerCase());
   const comparison = normalize(a).localeCompare(normalize(b));
   return direction === 'asc' ? comparison : -comparison;
+}
+
+function compareSchedulers(
+  a: Scheduler,
+  b: Scheduler,
+  column: SchedulerSortColumn,
+  direction: SortDirection
+): number {
+  let comparison = 0;
+
+  if (column === 'name') {
+    comparison = a.name.localeCompare(b.name);
+  } else if (column === 'brand') {
+    comparison = compareSchedulerBrand(a.brand, b.brand, 'asc');
+  } else {
+    const dateA = parseListDateValue(a.createdDateRaw)?.getTime() ?? 0;
+    const dateB = parseListDateValue(b.createdDateRaw)?.getTime() ?? 0;
+    comparison = dateA - dateB;
+  }
+
+  return direction === 'asc' ? comparison : -comparison;
+}
+
+function schedulerMatchesSearch(mapped: Scheduler, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const searchableText = [
+    mapped.name,
+    mapped.brand,
+    mapped.pickup,
+    mapped.dropoff,
+    mapped.productCode,
+    mapped.submissionType,
+    mapped.carCodes,
+    mapped.lor,
+    mapped.source,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return searchableText.includes(normalizedQuery);
+}
+
+function schedulerMatchesRefinements(
+  mapped: Scheduler,
+  raw: any,
+  searchQuery: string,
+  appliedFilters: SchedulerFilterState,
+  showNeedsAttentionOnly: boolean
+): boolean {
+  if (showNeedsAttentionOnly && mapped.importStatus !== 'needs_attention') {
+    return false;
+  }
+
+  if (!schedulerMatchesSearch(mapped, searchQuery)) {
+    return false;
+  }
+
+  return schedulerMatchesFilters(raw, appliedFilters);
 }
 type StatusTab = 'active' | 'inactive';
 
@@ -75,6 +147,7 @@ interface Scheduler {
   recurrence: string;
   brand: string;
   createdDate: string;
+  createdDateRaw: string;
   isActive: boolean;
   importStatus: 'complete' | 'needs_attention' | null;
   importValidationErrors: string[];
@@ -104,14 +177,14 @@ function getSchedulerFieldValues(scheduler: any, field: keyof SchedulerFilterSta
       return scheduler.scheduleName ? [scheduler.scheduleName] : [];
     case 'brand':
       return scheduler.brand ? [scheduler.brand] : [];
-    case 'startDate':
-      return scheduler.startDate ? [scheduler.startDate] : [];
     case 'occurrence':
       return scheduler.endAfterOccurrences ? [String(scheduler.endAfterOccurrences)] : [];
     case 'scheduleTime':
       return scheduler.scheduleTime ? [scheduler.scheduleTime] : [];
     case 'pickupLocation':
       return normalizeValues(scheduler.pickupLocation);
+    case 'productLocation':
+      return normalizeValues(scheduler.productLocation);
     case 'dropoffLocation':
       return normalizeValues(scheduler.dropOffLocation);
     case 'productCode':
@@ -166,6 +239,13 @@ function buildFilterOptions(schedulers: any[]): SchedulerFilterOptions {
   });
   options.brand.sort((a, b) => a.localeCompare(b));
 
+  RULE_PICKUP_LOCATION_OPTIONS.forEach((location) => {
+    if (!options.productLocation.includes(location)) {
+      options.productLocation.push(location);
+    }
+  });
+  options.productLocation.sort((a, b) => a.localeCompare(b));
+
   return options;
 }
 
@@ -190,18 +270,18 @@ function countActiveFilterFields(filters: SchedulerFilterState): number {
 const FILTER_LABELS: Record<keyof SchedulerFilterState, string> = {
   scheduleName: 'Schedule Name',
   brand: 'Brand',
-  startDate: 'Start Date',
   occurrence: 'Occurrence',
   scheduleTime: 'Schedule Time',
-  pickupLocation: 'PickUp',
-  dropoffLocation: 'Dropoff',
+  pickupLocation: 'Pickup Location',
+  productLocation: 'Product Location',
+  dropoffLocation: 'Dropoff Location',
   productCode: 'Product Code',
   lor: 'LOR',
   carCode: 'Car Code',
   dataSource: 'Data Source',
   dateRangeFixed: 'Date Range Fixed',
   dateRangeDaysOut: 'Days Out',
-  pickupTime: 'PickUp Time',
+  pickupTime: 'Pickup Time',
   dropoffTime: 'Dropoff Time',
 };
 
@@ -209,7 +289,9 @@ const STICKY_COL_CHECKBOX = 'sticky left-0 z-20 w-[52px] min-w-[52px]';
 const STICKY_COL_NAME = 'sticky left-[52px] z-20 w-[200px] min-w-[200px] max-w-[200px]';
 const STICKY_COL_CHECKBOX_HEAD = 'sticky left-0 z-30 w-[52px] min-w-[52px]';
 const STICKY_COL_NAME_HEAD = 'sticky left-[52px] z-30 w-[200px] min-w-[200px] max-w-[200px]';
-const STICKY_SHADOW = 'border-r border-gray-200 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.08)]';
+const STICKY_COL_ACTION = 'sticky right-0 z-20 w-[140px] min-w-[140px]';
+const STICKY_COL_ACTION_HEAD = 'sticky right-0 z-40 w-[140px] min-w-[140px]';
+const STICKY_BORDER = 'border-r border-gray-200';
 
 function getStickyCellBg(importStatus: Scheduler['importStatus'] | null, isSelected: boolean, isHeader = false): string {
   if (isHeader) return 'bg-gray-50';
@@ -244,13 +326,13 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   const [statusTab, setStatusTab] = useState<StatusTab>('active');
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [pendingArchiveIds, setPendingArchiveIds] = useState<string[]>([]);
-  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [draftFilters, setDraftFilters] = useState<SchedulerFilterState>(emptySchedulerFilters());
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<SchedulerFilterState>(emptySchedulerFilters());
   const [showNeedsAttentionOnly, setShowNeedsAttentionOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [brandSortDirection, setBrandSortDirection] = useState<BrandSortDirection>(null);
+  const [sortColumn, setSortColumn] = useState<SchedulerSortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection | null>(null);
 
   const filterOptions = useMemo(() => buildFilterOptions(schedulers.filter((s) => !s.isArchived)), [schedulers]);
 
@@ -305,6 +387,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
       recurrence: formatRecurrence(),
       brand: scheduler.brand || '—',
       createdDate: formatListCreatedDate(scheduler.createdDate),
+      createdDateRaw: scheduler.createdDate || '',
       isActive: getSchedulerIsActive(scheduler, activeStates),
       importStatus: scheduler.importStatus ?? null,
       importValidationErrors: scheduler.importValidationErrors ?? [],
@@ -322,6 +405,23 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   );
   const inactiveCount = mappedSchedulers.length - activeCount;
 
+  const hasListRefinements =
+    searchQuery.trim().length > 0 || hasAnyActiveFilters(appliedFilters) || showNeedsAttentionOnly;
+
+  const schedulersMatchingRefinements = useMemo(() => {
+    return mappedSchedulers.filter((mapped) => {
+      const raw = schedulers.find((s) => s.id === mapped.id);
+      if (!raw) return false;
+      return schedulerMatchesRefinements(mapped, raw, searchQuery, appliedFilters, showNeedsAttentionOnly);
+    });
+  }, [mappedSchedulers, schedulers, searchQuery, appliedFilters, showNeedsAttentionOnly]);
+
+  const activeFilteredCount = useMemo(
+    () => schedulersMatchingRefinements.filter((scheduler) => scheduler.isActive).length,
+    [schedulersMatchingRefinements]
+  );
+  const inactiveFilteredCount = schedulersMatchingRefinements.length - activeFilteredCount;
+
   const archivableSchedulers = useMemo(
     () =>
       mappedSchedulers.filter((mapped) => {
@@ -332,46 +432,65 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   );
 
   const filteredSchedulers = useMemo(() => {
-    return mappedSchedulers.filter((mapped) => {
+    return schedulersMatchingRefinements.filter((mapped) => {
       if (statusTab === 'active' && !mapped.isActive) return false;
       if (statusTab === 'inactive' && mapped.isActive) return false;
-
-      const raw = schedulers.find((s) => s.id === mapped.id);
-      if (!raw) return false;
-
-      if (showNeedsAttentionOnly && mapped.importStatus !== 'needs_attention') {
-        return false;
-      }
-
-      if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        if (!mapped.name.toLowerCase().includes(query)) return false;
-      }
-
-      return schedulerMatchesFilters(raw, appliedFilters);
+      return true;
     });
-  }, [mappedSchedulers, schedulers, searchQuery, appliedFilters, showNeedsAttentionOnly, statusTab]);
+  }, [schedulersMatchingRefinements, statusTab]);
 
   const sortedFilteredSchedulers = useMemo(() => {
-    if (!brandSortDirection) return filteredSchedulers;
-    return [...filteredSchedulers].sort((a, b) => compareSchedulerBrand(a.brand, b.brand, brandSortDirection));
-  }, [filteredSchedulers, brandSortDirection]);
+    if (!sortColumn || !sortDirection) return filteredSchedulers;
+    return [...filteredSchedulers].sort((a, b) => compareSchedulers(a, b, sortColumn, sortDirection));
+  }, [filteredSchedulers, sortColumn, sortDirection]);
 
   const totalPages = Math.max(1, Math.ceil(sortedFilteredSchedulers.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedSchedulers = sortedFilteredSchedulers.slice(startIndex, startIndex + itemsPerPage);
+  const statusTotalCount = statusTab === 'active' ? activeCount : inactiveCount;
 
-  const handleBrandSort = () => {
-    setBrandSortDirection((current) => {
-      if (current === null) return 'asc';
-      if (current === 'asc') return 'desc';
-      return null;
-    });
+  const handleColumnSort = (column: SchedulerSortColumn) => {
+    if (sortColumn !== column) {
+      setSortColumn(column);
+      setSortDirection('asc');
+      return;
+    }
+
+    if (sortDirection === 'asc') {
+      setSortDirection('desc');
+      return;
+    }
+
+    setSortColumn(null);
+    setSortDirection(null);
+  };
+
+  const renderSortableHeader = (label: string, column: SchedulerSortColumn) => {
+    const isActive = sortColumn === column;
+    const ariaLabel = isActive
+      ? sortDirection === 'asc'
+        ? `Sort by ${label.toLowerCase()} ascending`
+        : `Sort by ${label.toLowerCase()} descending`
+      : `Sort by ${label.toLowerCase()}`;
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleColumnSort(column)}
+        className="inline-flex items-center gap-1 hover:text-[#2c3e50] transition-colors"
+        aria-label={ariaLabel}
+      >
+        {label}
+        {isActive && sortDirection === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-[#ff9800]" />}
+        {isActive && sortDirection === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-[#ff9800]" />}
+        {!isActive && <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+      </button>
+    );
   };
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, appliedFilters, statusTab, showNeedsAttentionOnly, itemsPerPage, brandSortDirection]);
+  }, [searchQuery, appliedFilters, statusTab, showNeedsAttentionOnly, itemsPerPage, sortColumn, sortDirection]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -485,34 +604,43 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
     );
   };
 
-  const handleOpenFilterDrawer = () => {
-    setDraftFilters({ ...appliedFilters });
-    setFilterDrawerOpen(true);
+  const activeMoreFilterCount = useMemo(
+    () => countActiveFilterFieldsForKeys(appliedFilters, SCHEDULER_MORE_FILTER_FIELDS.map((field) => field.key)),
+    [appliedFilters]
+  );
+
+  const handleToggleMoreFilters = () => {
+    setFilterPanelOpen((open) => !open);
   };
 
-  const handleApplyFilters = () => {
-    setAppliedFilters({ ...draftFilters });
-    setFilterDrawerOpen(false);
+  const handleMoreFilterChange = (key: keyof SchedulerFilterState, value: string[]) => {
+    setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
-  const handleResetFilters = () => {
-    setDraftFilters(emptySchedulerFilters());
+  const handleResetMoreFilters = () => {
+    const nextApplied = { ...appliedFilters };
+    SCHEDULER_MORE_FILTER_FIELDS.forEach(({ key }) => {
+      nextApplied[key] = [];
+    });
+    setAppliedFilters(nextApplied);
+  };
+
+  const handlePrimaryFilterChange = (key: keyof SchedulerFilterState, value: string[]) => {
+    setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
   const handleClearFilters = () => {
-    const empty = emptySchedulerFilters();
-    setAppliedFilters(empty);
-    setDraftFilters(empty);
+    setAppliedFilters(emptySchedulerFilters());
+    setSearchQuery('');
     setShowNeedsAttentionOnly(false);
+    setFilterPanelOpen(false);
   };
 
   const handleRemoveFilterChip = (field: keyof SchedulerFilterState, value: string) => {
-    const nextApplied = {
+    setAppliedFilters({
       ...appliedFilters,
       [field]: appliedFilters[field].filter((item) => item !== value),
-    };
-    setAppliedFilters(nextApplied);
-    setDraftFilters(nextApplied);
+    });
   };
 
   const handleEditClick = (scheduler: Scheduler) => {
@@ -640,114 +768,76 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
         <>
           {/* Filter Section */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            {/* Filters Row */}
-            <div className="mb-4">
-              <div className="flex items-end gap-2">
-                {/* Search */}
-                <div className="max-w-md flex-1">
-                  <label className="block text-xs text-[#666666] mb-1.5 h-[14px]">Search Schedulers</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search by name"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full h-7 pl-3 pr-9 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
-                    />
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  </div>
-                </div>
-                {/* Filter Button */}
-                <div className="flex items-center gap-2">
-                  <CustomButton
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenFilterDrawer}
-                    className={`rounded ${hasActiveFilters ? 'border-[#ff9800] bg-orange-50' : ''}`}
-                  >
-                    <Filter className={`h-4 w-4 ${hasActiveFilters ? 'text-[#ff9800]' : ''}`} />
-                    Filter
-                    {hasActiveFilters && (
-                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
-                        {activeFilterCount}
-                      </span>
-                    )}
-                  </CustomButton>
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={handleClearFilters}
-                      className="inline-flex items-center gap-1 h-7 px-2 text-xs text-[#ff9800] hover:text-[#f57c00] hover:bg-orange-50 rounded transition-colors"
-                      aria-label="Clear all filters"
+            <div className="flex flex-wrap items-end gap-3 w-full">
+                  {SCHEDULER_PRIMARY_FILTER_FIELDS.map(({ key, label, placeholder }) => (
+                    <div key={key} className="flex-1 min-w-[200px]">
+                      <label className="block text-xs text-[#666666] mb-1.5 h-[14px] whitespace-nowrap truncate" title={label}>
+                        {label}
+                      </label>
+                      <MultiSelect
+                        value={appliedFilters[key]}
+                        onChange={(value) => handlePrimaryFilterChange(key, value)}
+                        options={filterOptions[key]}
+                        placeholder={placeholder}
+                        disabled={filterOptions[key].length === 0}
+                        compact
+                      />
+                    </div>
+                  ))}
+                  <div className="shrink-0">
+                    <label className="block text-xs text-transparent mb-1.5 h-[14px] select-none">More</label>
+                    <CustomButton
+                      variant="outline"
+                      size="sm"
+                      onClick={handleToggleMoreFilters}
+                      className={`group rounded ${filterPanelOpen || activeMoreFilterCount > 0 ? 'border-[#ff9800] bg-orange-50' : ''}`}
                     >
-                      <X className="h-3.5 w-3.5" />
-                      Clear filters
-                    </button>
-                  )}
-                </div>
-              </div>
+                      <ChevronDown className={`h-4 w-4 transition-transform group-hover:text-white ${filterPanelOpen ? 'rotate-180 text-[#ff9800]' : activeMoreFilterCount > 0 ? 'text-[#ff9800]' : ''}`} />
+                      More filters
+                      {activeMoreFilterCount > 0 && (
+                        <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
+                          {activeMoreFilterCount}
+                        </span>
+                      )}
+                    </CustomButton>
+                  </div>
             </div>
 
-            {/* Results */}
-            <div className="pt-3 border-t border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatusTab('active');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                    statusTab === 'active'
-                      ? 'text-[#ff9800] border-b-2 border-[#ff9800]'
-                      : 'text-[#666666] hover:text-[#ff9800]'
-                  }`}
-                >
-                  Active ({activeCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatusTab('inactive');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                    statusTab === 'inactive'
-                      ? 'text-[#ff9800] border-b-2 border-[#ff9800]'
-                      : 'text-[#666666] hover:text-[#ff9800]'
-                  }`}
-                >
-                  Inactive ({inactiveCount})
-                </button>
-              </div>
-              <p className="text-sm text-[#666666]">
-                {filteredSchedulers.length === 0
-                  ? `Showing 0 of ${statusTab === 'active' ? activeCount : inactiveCount} ${statusTab} schedulers`
-                  : `Showing ${startIndex + 1} - ${Math.min(startIndex + itemsPerPage, filteredSchedulers.length)} of ${filteredSchedulers.length} ${statusTab} scheduler${filteredSchedulers.length === 1 ? '' : 's'}`}
-                {hasActiveFilters && (
-                  <span className="text-[#ff9800]">
-                    {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
-                  </span>
-                )}
-              </p>
-            </div>
+            <SchedulerFilterPanel
+              isOpen={filterPanelOpen}
+              options={filterOptions}
+              filters={appliedFilters}
+              onFilterChange={handleMoreFilterChange}
+              onReset={handleResetMoreFilters}
+            />
 
             {activeFilterChips.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
-                {activeFilterChips.map((chip) => (
-                  <button
-                    key={`${chip.field}-${chip.value}`}
-                    type="button"
-                    onClick={() => handleRemoveFilterChip(chip.field, chip.value)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs text-[#a65a00] hover:bg-orange-100 transition-colors"
-                    title="Remove filter"
-                  >
-                    <span>{chip.label}</span>
-                    <X className="h-3 w-3" />
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-200">
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeFilterChips.map((chip) => (
+                    <button
+                      key={`${chip.field}-${chip.value}`}
+                      type="button"
+                      onClick={() => handleRemoveFilterChip(chip.field, chip.value)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs text-[#a65a00] hover:bg-orange-100 transition-colors"
+                      title="Remove filter"
+                    >
+                      <span>{chip.label}</span>
+                      <X className="h-3 w-3" />
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="inline-flex items-center gap-1 h-7 px-2 text-xs text-[#ff9800] hover:text-[#f57c00] hover:bg-orange-50 rounded transition-colors shrink-0"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear all
+                </button>
               </div>
             )}
+
           </div>
 
           {statusTab === 'inactive' && archivableSchedulers.length > 0 && (
@@ -827,11 +917,85 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
             </div>
           )}
 
-          {/* Table */}
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200 relative">
+          {/* Status tabs + Table */}
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+              <div
+                className="inline-flex items-center p-1 h-9 rounded-lg bg-gray-100 border border-gray-300 shrink-0"
+                role="tablist"
+                aria-label="Scheduler status"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusTab === 'active'}
+                  onClick={() => {
+                    setStatusTab('active');
+                    setSelectedIds([]);
+                  }}
+                  className={`h-7 px-4 text-sm font-medium rounded-md transition-all whitespace-nowrap inline-flex items-center ${
+                    statusTab === 'active'
+                      ? 'bg-white text-[#ff9800] shadow-sm'
+                      : 'text-[#666666] hover:text-[#2c3e50]'
+                  }`}
+                >
+                  Active ({activeFilteredCount})
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusTab === 'inactive'}
+                  onClick={() => {
+                    setStatusTab('inactive');
+                    setSelectedIds([]);
+                  }}
+                  className={`h-7 px-4 text-sm font-medium rounded-md transition-all whitespace-nowrap inline-flex items-center ${
+                    statusTab === 'inactive'
+                      ? 'bg-white text-[#ff9800] shadow-sm'
+                      : 'text-[#666666] hover:text-[#2c3e50]'
+                  }`}
+                >
+                  Inactive ({inactiveFilteredCount})
+                </button>
+              </div>
+
+              <div className="hidden lg:block w-px h-9 bg-gray-300 shrink-0" aria-hidden="true" />
+
+              <div className="relative w-full sm:w-[340px] shrink-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <input
+                  type="search"
+                  aria-label="Search schedulers in current tab"
+                  placeholder="Search by Scheduler, brand, location name"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-9 pl-9 pr-3 border border-gray-300 bg-white rounded text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
+                />
+              </div>
+
+              <p className="text-xs sm:text-sm text-[#666666] shrink-0 lg:text-right lg:ml-auto">
+                  {formatListResultsText({
+                    startIndex,
+                    itemsPerPage,
+                    filteredCount: filteredSchedulers.length,
+                    statusTotalCount,
+                    statusLabel: statusTab,
+                    hasRefinements: hasListRefinements,
+                    entityLabel: 'scheduler',
+                  })}
+                  {hasActiveFilters && (
+                    <span className="text-[#ff9800]">
+                      {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
+                    </span>
+                  )}
+                </p>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+            <div className="relative bg-white">
             {/* Right Scroll Indicator — aligned to table header */}
             {showRightArrow && (
-              <div className="absolute top-0 right-0 h-11 w-16 z-10 pointer-events-none">
+              <div className="absolute top-0 right-[140px] h-11 w-16 z-10 pointer-events-none">
                 <div className="absolute inset-0 bg-gradient-to-l from-white via-white/95 to-transparent"></div>
                 <div className="absolute top-1/2 right-2 -translate-y-1/2 flex items-center">
                   <ChevronsRight className="h-5 w-5 text-[#ff9800] animate-pulse drop-shadow-sm" />
@@ -875,7 +1039,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
           <table className="w-full border-separate border-spacing-0">
             <thead className="sticky top-0 z-20">
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className={`px-4 py-3 text-left ${STICKY_COL_CHECKBOX_HEAD} ${STICKY_SHADOW} bg-gray-50`}>
+                <th className={`px-4 py-3 text-left ${STICKY_COL_CHECKBOX_HEAD} ${STICKY_BORDER} bg-gray-50`}>
                   <Checkbox
                     checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
                     onCheckedChange={handleToggleSelectAll}
@@ -883,31 +1047,19 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                     className="border-[#ff9800] data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800] data-[state=indeterminate]:bg-[#ff9800] data-[state=indeterminate]:border-[#ff9800]"
                   />
                 </th>
-                <th className={`px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap ${STICKY_COL_NAME_HEAD} ${STICKY_SHADOW} bg-gray-50`}>Name</th>
-                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">
-                  <button
-                    type="button"
-                    onClick={handleBrandSort}
-                    className="inline-flex items-center gap-1 hover:text-[#2c3e50] transition-colors"
-                    aria-label={
-                      brandSortDirection === 'asc'
-                        ? 'Sort by brand ascending'
-                        : brandSortDirection === 'desc'
-                          ? 'Sort by brand descending'
-                          : 'Sort by brand'
-                    }
-                  >
-                    Brand
-                    {brandSortDirection === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-[#ff9800]" />}
-                    {brandSortDirection === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-[#ff9800]" />}
-                    {brandSortDirection === null && <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
-                  </button>
+                <th className={`px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap ${STICKY_COL_NAME_HEAD} ${STICKY_BORDER} bg-gray-50`}>
+                  {renderSortableHeader('Name', 'name')}
                 </th>
-                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Created Date</th>
+                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">
+                  {renderSortableHeader('Brand', 'brand')}
+                </th>
+                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">
+                  {renderSortableHeader('Created Date', 'createdDate')}
+                </th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Submission Type</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Rate Basis</th>
-                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Pickup</th>
-                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Dropoff</th>
+                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Pickup Location</th>
+                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Dropoff Location</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">LOR</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Pickup Time</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Dropoff Time</th>
@@ -920,7 +1072,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Next Run</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Update Time</th>
                 <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap">Recurrence</th>
-                <th className="px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap w-[10%]">Action</th>
+                <th className={`px-4 py-3 text-left text-xs text-[#666666] whitespace-nowrap ${STICKY_COL_ACTION_HEAD} bg-gray-50`}>Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -928,7 +1080,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 <tr>
                   <td colSpan={21} className="px-4 py-12 text-center text-gray-500">
                     No {statusTab} schedulers found.
-                    {(searchQuery || hasActiveFilters) && ' Try adjusting your search or filters.'}
+                    {(searchQuery || hasActiveFilters || showNeedsAttentionOnly) && ' Try adjusting your search or filters.'}
                   </td>
                 </tr>
               ) : (
@@ -952,7 +1104,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                       : 'hover:bg-gray-50'
                   } ${isSelected ? 'bg-orange-50/50' : ''}`}
                 >
-                  <td className={`px-4 py-3 ${STICKY_COL_CHECKBOX} ${STICKY_SHADOW} ${stickyBg} ${stickyHover}`}>
+                  <td className={`px-4 py-3 ${STICKY_COL_CHECKBOX} ${STICKY_BORDER} ${stickyBg} ${stickyHover}`}>
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => handleToggleSelect(scheduler.id)}
@@ -960,7 +1112,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                       className="border-[#ff9800] data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
                     />
                   </td>
-                  <td className={`px-4 py-3 text-sm text-gray-900 ${STICKY_COL_NAME} ${STICKY_SHADOW} ${stickyBg} ${stickyHover}`}>
+                  <td className={`px-4 py-3 text-sm text-gray-900 ${STICKY_COL_NAME} ${STICKY_BORDER} ${stickyBg} ${stickyHover}`}>
                     <div className="flex items-center gap-2 min-w-0 w-full overflow-hidden">
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -1005,7 +1157,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                   <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{scheduler.nextRun}</td>
                   <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{scheduler.updateTime}</td>
                   <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{scheduler.recurrence}</td>
-                  <td className="px-4 py-3">
+                  <td className={`px-4 py-3 whitespace-nowrap ${STICKY_COL_ACTION} ${stickyBg} ${stickyHover}`}>
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={scheduler.isActive}
@@ -1107,21 +1259,12 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 </div>
               </div>
             )}
+            </div>
+            </div>
           </div>
         </>
       )}
       
-      {/* Filter Drawer */}
-      <SchedulerFilterDrawer
-        isOpen={filterDrawerOpen}
-        onClose={() => setFilterDrawerOpen(false)}
-        options={filterOptions}
-        draftFilters={draftFilters}
-        onDraftChange={setDraftFilters}
-        onApply={handleApplyFilters}
-        onReset={handleResetFilters}
-      />
-
       <SchedulerBulkEditDrawer
         isOpen={bulkEditDrawerOpen}
         onClose={() => setBulkEditDrawerOpen(false)}
