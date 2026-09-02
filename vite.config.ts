@@ -32,7 +32,7 @@ function figmaVersionedImports() {
 }
 
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/rule-studio-module-2/' : '/',
+  base: command === 'build' ? '/rule-studio-module-expandable-filter/' : '/',
   server: {
     host: true,
     port: 3001,
