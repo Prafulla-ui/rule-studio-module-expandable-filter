@@ -36,9 +36,22 @@ export function MultiSelect({
     onChange(newValue);
   };
 
-  const handleSelectAll = () => {
-    const newValue = [...new Set([...value, ...filteredOptions])];
-    onChange(newValue);
+  const filteredOptions = options.filter(option =>
+    String(option).toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const allFilteredSelected = filteredOptions.length > 0 &&
+    filteredOptions.every(option => value.includes(option));
+
+  const someFilteredSelected = filteredOptions.some(option => value.includes(option));
+
+  const handleSelectAllToggle = () => {
+    if (allFilteredSelected) {
+      onChange(value.filter((selected) => !filteredOptions.includes(selected)));
+      return;
+    }
+
+    onChange([...new Set([...value, ...filteredOptions])]);
   };
 
   const getDisplayText = () => {
@@ -48,13 +61,6 @@ export function MultiSelect({
     const remaining = value.length - 1;
     return `${firstOne} +${remaining}`;
   };
-
-  const filteredOptions = options.filter(option => 
-    String(option).toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const allFilteredSelected = filteredOptions.length > 0 && 
-    filteredOptions.every(option => value.includes(option));
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
@@ -119,12 +125,11 @@ export function MultiSelect({
           <div className="border-b border-gray-200 mb-2 pb-2">
             <div
               className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
-              onClick={handleSelectAll}
+              onClick={handleSelectAllToggle}
             >
               <Checkbox
-                checked={allFilteredSelected}
-                onCheckedChange={handleSelectAll}
-                className="data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
+                checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+                className="pointer-events-none data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800] data-[state=indeterminate]:bg-[#ff9800] data-[state=indeterminate]:border-[#ff9800]"
               />
               <span className="text-xs text-gray-900">{selectAllLabel}</span>
             </div>
@@ -142,8 +147,7 @@ export function MultiSelect({
               >
                 <Checkbox
                   checked={value.includes(option)}
-                  onCheckedChange={() => toggleOption(option)}
-                  className="data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
+                  className="pointer-events-none data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
                 />
                 <span className="text-sm text-gray-900">{option}</span>
               </div>
