@@ -48,7 +48,7 @@ export const RULE_FILTER_FIELDS: { key: keyof RuleFilterState; label: string; pl
   { key: 'createdDate', label: 'Created Date', placeholder: 'Select created dates' },
 ];
 
-export const RULE_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productCode'] as const satisfies readonly (keyof RuleFilterState)[];
+export const RULE_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'dropoffLocation', 'productCode', 'lor'] as const satisfies readonly (keyof RuleFilterState)[];
 
 export const RULE_PRIMARY_FILTER_FIELDS = RULE_FILTER_FIELDS.filter((field) =>
   (RULE_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)

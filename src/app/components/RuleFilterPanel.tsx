@@ -27,11 +27,11 @@ export function RuleFilterPanel({
       }`}
     >
       <div className="overflow-hidden">
-        <div className="pt-3 mt-3 border-t border-gray-200">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 items-end">
             {RULE_MORE_FILTER_FIELDS.map(({ key, label, placeholder }) => (
               <div key={key} className="min-w-0">
-                <label className="block text-xs text-[#666666] mb-1.5 whitespace-nowrap truncate" title={label}>
+                <label className="block text-xs text-[#666666] mb-1.5 h-[14px] whitespace-nowrap truncate" title={label}>
                   {label}
                 </label>
                 <MultiSelect

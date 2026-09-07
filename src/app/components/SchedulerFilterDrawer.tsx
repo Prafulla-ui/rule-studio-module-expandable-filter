@@ -66,7 +66,7 @@ export const SCHEDULER_FILTER_FIELDS: { key: keyof SchedulerFilterState; label: 
   { key: 'dropoffTime', label: 'Dropoff Time', placeholder: 'Select dropoff times' },
 ];
 
-export const SCHEDULER_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'productCode'] as const satisfies readonly (keyof SchedulerFilterState)[];
+export const SCHEDULER_PRIMARY_FILTER_KEYS = ['brand', 'pickupLocation', 'dropoffLocation', 'productCode', 'lor'] as const satisfies readonly (keyof SchedulerFilterState)[];
 
 export const SCHEDULER_PRIMARY_FILTER_FIELDS = SCHEDULER_FILTER_FIELDS.filter((field) =>
   (SCHEDULER_PRIMARY_FILTER_KEYS as readonly string[]).includes(field.key)

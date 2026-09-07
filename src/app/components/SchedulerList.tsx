@@ -258,23 +258,6 @@ function countActiveFilterFields(filters: SchedulerFilterState): number {
   return Object.values(filters).filter((values) => values.length > 0).length;
 }
 
-const FILTER_LABELS: Record<keyof SchedulerFilterState, string> = {
-  scheduleName: 'Schedule Name',
-  brand: 'Brand',
-  occurrence: 'Occurrence',
-  scheduleTime: 'Schedule Time',
-  pickupLocation: 'Pickup Location',
-  dropoffLocation: 'Dropoff Location',
-  productCode: 'Product Code',
-  lor: 'LOR',
-  carCode: 'Car Code',
-  dataSource: 'Data Source',
-  dateRangeFixed: 'Date Range Fixed',
-  dateRangeDaysOut: 'Days Out',
-  pickupTime: 'Pickup Time',
-  dropoffTime: 'Dropoff Time',
-};
-
 const STICKY_COL_CHECKBOX = 'sticky left-0 z-20 w-[52px] min-w-[52px]';
 const STICKY_COL_NAME = 'sticky left-[52px] z-20 w-[200px] min-w-[200px] max-w-[200px]';
 const STICKY_COL_CHECKBOX_HEAD = 'sticky left-0 z-30 w-[52px] min-w-[52px]';
@@ -490,16 +473,6 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
 
   const hasActiveFilters = hasAnyActiveFilters(appliedFilters);
   const activeFilterCount = countActiveFilterFields(appliedFilters);
-  const activeFilterChips = useMemo(() => {
-    const fields = Object.keys(appliedFilters) as (keyof SchedulerFilterState)[];
-    return fields.flatMap((field) =>
-      appliedFilters[field].map((value) => ({
-        field,
-        value,
-        label: `${FILTER_LABELS[field]}: ${value}`,
-      }))
-    );
-  }, [appliedFilters]);
 
   const filteredIds = useMemo(() => filteredSchedulers.map((s) => s.id), [filteredSchedulers]);
   const selectedSchedulers = useMemo(
@@ -617,20 +590,6 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
 
   const handlePrimaryFilterChange = (key: keyof SchedulerFilterState, value: string[]) => {
     setAppliedFilters({ ...appliedFilters, [key]: value });
-  };
-
-  const handleClearFilters = () => {
-    setAppliedFilters(emptySchedulerFilters());
-    setSearchQuery('');
-    setShowNeedsAttentionOnly(false);
-    setFilterPanelOpen(false);
-  };
-
-  const handleRemoveFilterChip = (field: keyof SchedulerFilterState, value: string) => {
-    setAppliedFilters({
-      ...appliedFilters,
-      [field]: appliedFilters[field].filter((item) => item !== value),
-    });
   };
 
   const handleEditClick = (scheduler: Scheduler) => {
@@ -758,9 +717,11 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
         <>
           {/* Filter Section */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="flex flex-wrap items-end gap-3 w-full">
+            <div className="flex flex-col gap-3 w-full">
+              <div className="flex flex-wrap lg:flex-nowrap items-end gap-3 w-full">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 flex-1 min-w-0">
                   {SCHEDULER_PRIMARY_FILTER_FIELDS.map(({ key, label, placeholder }) => (
-                    <div key={key} className="flex-1 min-w-[200px]">
+                    <div key={key} className="min-w-0">
                       <label className="block text-xs text-[#666666] mb-1.5 h-[14px] whitespace-nowrap truncate" title={label}>
                         {label}
                       </label>
@@ -774,59 +735,34 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                       />
                     </div>
                   ))}
-                  <div className="shrink-0">
-                    <label className="block text-xs text-transparent mb-1.5 h-[14px] select-none">More</label>
-                    <CustomButton
-                      variant="outline"
-                      size="sm"
-                      onClick={handleToggleMoreFilters}
-                      className={`group rounded ${filterPanelOpen || activeMoreFilterCount > 0 ? 'border-[#ff9800] bg-orange-50' : ''}`}
-                    >
-                      <ChevronDown className={`h-4 w-4 transition-transform group-hover:text-white ${filterPanelOpen ? 'rotate-180 text-[#ff9800]' : activeMoreFilterCount > 0 ? 'text-[#ff9800]' : ''}`} />
-                      More filters
-                      {activeMoreFilterCount > 0 && (
-                        <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
-                          {activeMoreFilterCount}
-                        </span>
-                      )}
-                    </CustomButton>
-                  </div>
-            </div>
-
-            <SchedulerFilterPanel
-              isOpen={filterPanelOpen}
-              options={filterOptions}
-              filters={appliedFilters}
-              onFilterChange={handleMoreFilterChange}
-              onReset={handleResetMoreFilters}
-            />
-
-            {activeFilterChips.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-200">
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeFilterChips.map((chip) => (
-                    <button
-                      key={`${chip.field}-${chip.value}`}
-                      type="button"
-                      onClick={() => handleRemoveFilterChip(chip.field, chip.value)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs text-[#a65a00] hover:bg-orange-100 transition-colors"
-                      title="Remove filter"
-                    >
-                      <span>{chip.label}</span>
-                      <X className="h-3 w-3" />
-                    </button>
-                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleClearFilters}
-                  className="inline-flex items-center gap-1 h-7 px-2 text-xs text-[#ff9800] hover:text-[#f57c00] hover:bg-orange-50 rounded transition-colors shrink-0"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Clear all
-                </button>
+                <div className="shrink-0">
+                  <label className="block text-xs text-transparent mb-1.5 h-[14px] select-none" aria-hidden="true">More</label>
+                  <CustomButton
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleMoreFilters}
+                    className={`group rounded ${filterPanelOpen || activeMoreFilterCount > 0 ? 'border-[#ff9800] bg-orange-50' : ''}`}
+                  >
+                    <ChevronDown className={`h-4 w-4 transition-transform group-hover:text-white ${filterPanelOpen ? 'rotate-180 text-[#ff9800]' : activeMoreFilterCount > 0 ? 'text-[#ff9800]' : ''}`} />
+                    More filters
+                    {activeMoreFilterCount > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff9800] text-white text-[10px] font-semibold leading-none">
+                        {activeMoreFilterCount}
+                      </span>
+                    )}
+                  </CustomButton>
+                </div>
               </div>
-            )}
+
+              <SchedulerFilterPanel
+                isOpen={filterPanelOpen}
+                options={filterOptions}
+                filters={appliedFilters}
+                onFilterChange={handleMoreFilterChange}
+                onReset={handleResetMoreFilters}
+              />
+            </div>
 
           </div>
 
