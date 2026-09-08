@@ -670,7 +670,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
             isEnabled ? 'text-[#ff9800]' : ''
           }`}
         />
-        Run Selected Schedulers
+        Run Schedulers
       </CustomButton>
     );
   };
@@ -694,7 +694,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
         </p>
         <ul className="text-xs text-gray-700 leading-relaxed mt-2 space-y-1 list-disc pl-4">
           <li>Select up to 2 active schedulers.</li>
-          <li>Click <span className="font-medium">Run Selected Schedulers</span>.</li>
+          <li>Click <span className="font-medium">Run Schedulers</span>.</li>
           <li>A <span className="font-medium">Running</span> badge shows progress until rates are ready on the Technical Chart.</li>
         </ul>
       </PopoverContent>
@@ -1229,11 +1229,11 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                   <div className="flex gap-3 min-w-0">
                     <Zap className="h-5 w-5 text-[#ff9800] shrink-0 mt-0.5" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Run Selected Schedulers</p>
+                      <p className="text-sm font-medium text-gray-900">Run Schedulers</p>
                       <p className="text-sm text-gray-600 mt-0.5">
                         Shop the latest market data on demand and push updated rates—without waiting for
                         the next scheduled run. Select up to 2 active schedulers below, click{' '}
-                        <span className="font-medium">Run Selected Schedulers</span>, and watch the{' '}
+                        <span className="font-medium">Run Schedulers</span>, and watch the{' '}
                         <span className="font-medium">Running</span> badge until rates are ready on the
                         Technical Chart.
                       </p>
