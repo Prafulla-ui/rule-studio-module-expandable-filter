@@ -10,7 +10,6 @@ interface RuleFilterPanelProps {
   options: RuleFilterOptions;
   filters: RuleFilterState;
   onFilterChange: (key: keyof RuleFilterState, value: string[]) => void;
-  onReset: () => void;
 }
 
 export function RuleFilterPanel({
@@ -18,7 +17,6 @@ export function RuleFilterPanel({
   options,
   filters,
   onFilterChange,
-  onReset,
 }: RuleFilterPanelProps) {
   return (
     <div
@@ -44,15 +42,6 @@ export function RuleFilterPanel({
                 />
               </div>
             ))}
-          </div>
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={onReset}
-              className="text-[#ff9800] hover:text-[#f57c00] transition-colors font-normal text-sm"
-            >
-              Reset more filters
-            </button>
           </div>
         </div>
       </div>

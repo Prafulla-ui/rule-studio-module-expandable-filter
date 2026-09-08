@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { CustomButton } from './CustomButton';
-import { Search, Calendar, Info, Plus, Edit, ChevronsRight, ChevronsLeft, X, AlertTriangle, Archive, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown } from 'lucide-react';
+import { Search, Calendar, Info, Plus, Edit, ChevronsRight, ChevronsLeft, X, AlertTriangle, Archive, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Play, Zap, Loader2 } from 'lucide-react';
 import { SchedulerBulkEditDrawer, type BulkEditUpdates } from './SchedulerBulkEditDrawer';
 import {
   emptySchedulerFilters,
@@ -28,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 
 function countActiveFilterFieldsForKeys<T extends Record<string, string[]>>(
   filters: T,
@@ -37,6 +38,15 @@ function countActiveFilterFieldsForKeys<T extends Record<string, string[]>>(
 }
 
 const ARCHIVE_UNUSED_DAYS = 90;
+const ON_DEMAND_RUN_MAX_SCHEDULERS = 2;
+const RUN_COACH_MARK_STORAGE_KEY = 'cargain-scheduler-run-coach-dismissed';
+const ON_DEMAND_RUN_SESSION_KEY = 'cargain-on-demand-run-schedulers';
+// Production shopping typically takes 15–30 minutes; shortened for demo walkthroughs.
+const ON_DEMAND_RUN_DEMO_DURATION_MS = 30_000;
+const TOAST_DURATION_MS = 15_000;
+const TOAST_DURATION_SHORT_MS = 15_000;
+const RUNNING_ACTION_DISABLED_MESSAGE =
+  'Running in progress. Edit and status changes are unavailable until the run completes.';
 type SchedulerSortColumn = 'name' | 'brand' | 'createdDate';
 type SortDirection = 'asc' | 'desc';
 
@@ -113,8 +123,7 @@ function parseSchedulerDate(value: string | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function getSchedulerIsActive(scheduler: any, activeStates: Record<string, boolean>): boolean {
-  if (activeStates[scheduler.id] !== undefined) return activeStates[scheduler.id];
+function getSchedulerIsActive(scheduler: any): boolean {
   return scheduler.scheduleIsActive !== false;
 }
 
@@ -295,19 +304,30 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   } | null>(null);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
-  const [activeStates, setActiveStates] = useState<{ [key: string]: boolean }>({});
   const [statusTab, setStatusTab] = useState<StatusTab>('active');
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [pendingArchiveIds, setPendingArchiveIds] = useState<string[]>([]);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<SchedulerFilterState>(emptySchedulerFilters());
   const [showNeedsAttentionOnly, setShowNeedsAttentionOnly] = useState(false);
+  const [needsAttentionBannerDismissed, setNeedsAttentionBannerDismissed] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortColumn, setSortColumn] = useState<SchedulerSortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection | null>(null);
+  const [runningSchedulerIds, setRunningSchedulerIds] = useState<string[]>([]);
+  const runTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [runCoachMarkDismissed, setRunCoachMarkDismissed] = useState(
+    () => localStorage.getItem(RUN_COACH_MARK_STORAGE_KEY) === 'true'
+  );
 
   const filterOptions = useMemo(() => buildFilterOptions(schedulers.filter((s) => !s.isArchived)), [schedulers]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(runTimeoutsRef.current).forEach(clearTimeout);
+    };
+  }, []);
 
   const visibleSchedulers = useMemo(
     () => schedulers.filter((scheduler) => !scheduler.isArchived),
@@ -361,7 +381,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
       brand: scheduler.brand || '—',
       createdDate: formatListCreatedDate(scheduler.createdDate),
       createdDateRaw: scheduler.createdDate || '',
-      isActive: getSchedulerIsActive(scheduler, activeStates),
+      isActive: getSchedulerIsActive(scheduler),
       importStatus: scheduler.importStatus ?? null,
       importValidationErrors: scheduler.importValidationErrors ?? [],
     };
@@ -422,6 +442,21 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   const paginatedSchedulers = sortedFilteredSchedulers.slice(startIndex, startIndex + itemsPerPage);
   const statusTotalCount = statusTab === 'active' ? activeCount : inactiveCount;
 
+  const selectedMappedSchedulers = useMemo(
+    () => mappedSchedulers.filter((scheduler) => selectedIds.includes(scheduler.id)),
+    [mappedSchedulers, selectedIds]
+  );
+
+  const inactiveSelectedCount = useMemo(
+    () => selectedMappedSchedulers.filter((scheduler) => !scheduler.isActive).length,
+    [selectedMappedSchedulers]
+  );
+
+  const canRunSelectedSchedulers =
+    selectedIds.length >= 1 &&
+    selectedIds.length <= ON_DEMAND_RUN_MAX_SCHEDULERS &&
+    inactiveSelectedCount === 0;
+
   const handleColumnSort = (column: SchedulerSortColumn) => {
     if (sortColumn !== column) {
       setSortColumn(column);
@@ -475,28 +510,168 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   const activeFilterCount = countActiveFilterFields(appliedFilters);
 
   const filteredIds = useMemo(() => filteredSchedulers.map((s) => s.id), [filteredSchedulers]);
+  const selectableFilteredIds = useMemo(
+    () => filteredIds.filter((id) => !runningSchedulerIds.includes(id)),
+    [filteredIds, runningSchedulerIds]
+  );
   const selectedSchedulers = useMemo(
     () => filteredSchedulers.filter((s) => selectedIds.includes(s.id)),
     [filteredSchedulers, selectedIds]
   );
-  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.includes(id));
-  const someFilteredSelected = filteredIds.some((id) => selectedIds.includes(id)) && !allFilteredSelected;
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 &&
+    selectableFilteredIds.every((id) => selectedIds.includes(id));
+  const someFilteredSelected =
+    selectableFilteredIds.some((id) => selectedIds.includes(id)) && !allFilteredSelected;
 
   const handleToggleSelectAll = () => {
     if (allFilteredSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+      setSelectedIds((prev) => prev.filter((id) => !selectableFilteredIds.includes(id)));
     } else {
-      setSelectedIds((prev) => [...new Set([...prev, ...filteredIds])]);
+      setSelectedIds((prev) => [...new Set([...prev, ...selectableFilteredIds])]);
     }
   };
 
   const handleToggleSelect = (schedulerId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(schedulerId)
-        ? prev.filter((id) => id !== schedulerId)
-        : [...prev, schedulerId]
+    if (runningSchedulerIds.includes(schedulerId)) return;
+
+    setSelectedIds((prev) => {
+      if (prev.includes(schedulerId)) {
+        return prev.filter((id) => id !== schedulerId);
+      }
+      if (prev.length === ON_DEMAND_RUN_MAX_SCHEDULERS) {
+        toast.info('On-demand run supports up to 2 schedulers', {
+          description: 'You can still use bulk actions for all selected rows.',
+          duration: TOAST_DURATION_SHORT_MS,
+        });
+      }
+      return [...prev, schedulerId];
+    });
+  };
+
+  const dismissRunCoachMark = () => {
+    setRunCoachMarkDismissed(true);
+    localStorage.setItem(RUN_COACH_MARK_STORAGE_KEY, 'true');
+  };
+
+  const handleRunSelectedSchedulers = () => {
+    if (!canRunSelectedSchedulers) return;
+
+    const selectedSchedulers = schedulers.filter(
+      (scheduler) =>
+        selectedIds.includes(scheduler.id) && getSchedulerIsActive(scheduler)
+    );
+    const schedulersToRun = selectedSchedulers.filter(
+      (scheduler) => !runningSchedulerIds.includes(scheduler.id)
+    );
+
+    if (schedulersToRun.length === 0) {
+      toast.info('Selected schedulers are already running', {
+        description: 'Select different schedulers to start another on-demand run.',
+        duration: TOAST_DURATION_SHORT_MS,
+      });
+      return;
+    }
+
+    const schedulerIds = schedulersToRun.map((scheduler) => scheduler.id);
+    const batchKey = `${Date.now()}-${schedulerIds.join('-')}`;
+
+    setRunningSchedulerIds((prev) => [...new Set([...prev, ...schedulerIds])]);
+    setSelectedIds((prev) => prev.filter((id) => !schedulerIds.includes(id)));
+
+    const startToastId = toast.info(
+      schedulersToRun.length === 1 ? 'Scheduler run started' : 'Scheduler runs started',
+      {
+        description:
+          schedulersToRun.length === 1
+            ? "Your selected scheduler is running. You'll be notified when the run completes."
+            : "Your selected schedulers are running. You'll be notified when the runs complete.",
+        duration: TOAST_DURATION_MS,
+      }
+    );
+
+    runTimeoutsRef.current[batchKey] = setTimeout(() => {
+      setRunningSchedulerIds((prev) => prev.filter((id) => !schedulerIds.includes(id)));
+
+      sessionStorage.setItem(
+        ON_DEMAND_RUN_SESSION_KEY,
+        JSON.stringify(
+          schedulersToRun.map((scheduler) => ({
+            id: scheduler.id,
+            name: scheduler.scheduleName || scheduler.name,
+            completedAt: new Date().toISOString(),
+          }))
+        )
+      );
+
+      toast.dismiss(startToastId);
+      toast.success('Run complete', {
+        description:
+          schedulersToRun.length === 1
+            ? "Your scheduler has finished running. See the latest prices on the Technical Chart."
+            : "Your schedulers have finished running. See the latest prices on the Technical Chart.",
+        duration: TOAST_DURATION_MS,
+      });
+
+      delete runTimeoutsRef.current[batchKey];
+    }, ON_DEMAND_RUN_DEMO_DURATION_MS);
+  };
+
+  const renderRunSelectedSchedulersButton = () => {
+    const isEnabled = canRunSelectedSchedulers;
+
+    return (
+      <CustomButton
+        variant="outline"
+        size="sm"
+        disabled={!canRunSelectedSchedulers}
+        onClick={handleRunSelectedSchedulers}
+        className={`group rounded whitespace-nowrap shrink-0 w-full sm:w-auto ${
+          isEnabled ? 'border-[#ff9800] bg-orange-50' : ''
+        }`}
+      >
+        <Play
+          className={`h-3.5 w-3.5 transition-colors group-hover:text-white ${
+            isEnabled ? 'text-[#ff9800]' : ''
+          }`}
+        />
+        Run Selected Schedulers
+      </CustomButton>
     );
   };
+
+  const renderOnDemandRunInfoPopover = () => (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="p-0.5 rounded hover:bg-gray-100 transition-colors shrink-0"
+          aria-label="On-demand run help"
+        >
+          <Info className="h-3.5 w-3.5 text-gray-400 hover:text-gray-600" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-3" align="end">
+        <p className="text-sm font-medium text-[#2c3e50] mb-1.5">On-demand run</p>
+        <p className="text-xs text-gray-700 leading-relaxed">
+          Run up to two active schedulers now to get recommended prices on the Technical Chart.
+        </p>
+        <ul className="text-xs text-gray-700 leading-relaxed mt-2 space-y-1 list-disc pl-4">
+          <li>Select schedulers using the row checkboxes.</li>
+          <li>Click <span className="font-medium">Run Selected Schedulers</span>.</li>
+          <li>A <span className="font-medium">Running</span> badge shows progress in the list.</li>
+          <li>You&apos;ll get a <span className="font-medium">notification email</span> when the run completes.</li>
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+
+  const renderOnDemandRunToolbarActions = () => (
+    <div className="inline-flex items-center gap-1.5 w-full sm:w-auto">
+      {renderRunSelectedSchedulersButton()}
+      {renderOnDemandRunInfoPopover()}
+    </div>
+  );
 
   const handleBulkEditApply = (updates: BulkEditUpdates) => {
     if (selectedIds.length === 0) return;
@@ -516,8 +691,26 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   };
 
   const handleOpenBulkStatusDialog = (action: 'activate' | 'deactivate') => {
+    if (hasSelectedShoppingSchedulers) {
+      toast.info('Running in progress', {
+        description: RUNNING_ACTION_DISABLED_MESSAGE,
+        duration: TOAST_DURATION_SHORT_MS,
+      });
+      return;
+    }
     setPendingBulkStatus(action);
     setBulkStatusDialogOpen(true);
+  };
+
+  const handleOpenBulkEdit = () => {
+    if (hasSelectedShoppingSchedulers) {
+      toast.info('Running in progress', {
+        description: RUNNING_ACTION_DISABLED_MESSAGE,
+        duration: TOAST_DURATION_SHORT_MS,
+      });
+      return;
+    }
+    setBulkEditDrawerOpen(true);
   };
 
   const handleCloseBulkStatusDialog = () => {
@@ -529,14 +722,18 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
     if (!pendingBulkStatus) return;
     const active = pendingBulkStatus === 'activate';
     const count = selectedIds.length;
-    selectedIds.forEach((id) => {
-      setActiveStates((prev) => ({ ...prev, [id]: active }));
-      const raw = schedulers.find((s) => s.id === id);
-      if (raw && onUpdateScheduler) {
-        onUpdateScheduler({ ...raw, scheduleIsActive: active }, { skipToast: true });
-      }
-    });
-    setStatusTab(active ? 'active' : 'inactive');
+
+    if (onBulkUpdateSchedulers) {
+      onBulkUpdateSchedulers(selectedIds, { scheduleIsActive: active });
+    } else {
+      selectedIds.forEach((id) => {
+        const raw = schedulers.find((s) => s.id === id);
+        if (raw && onUpdateScheduler) {
+          onUpdateScheduler({ ...raw, scheduleIsActive: active }, { skipToast: true });
+        }
+      });
+    }
+
     toast.success(
       active
         ? `Schedulers activated. ${count} scheduler(s) will now run as scheduled.`
@@ -580,12 +777,8 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
     setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
-  const handleResetMoreFilters = () => {
-    const nextApplied = { ...appliedFilters };
-    SCHEDULER_MORE_FILTER_FIELDS.forEach(({ key }) => {
-      nextApplied[key] = [];
-    });
-    setAppliedFilters(nextApplied);
+  const handleResetAllFilters = () => {
+    setAppliedFilters(emptySchedulerFilters());
   };
 
   const handlePrimaryFilterChange = (key: keyof SchedulerFilterState, value: string[]) => {
@@ -593,6 +786,13 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   };
 
   const handleEditClick = (scheduler: Scheduler) => {
+    if (runningSchedulerIds.includes(scheduler.id)) {
+      toast.info('Running in progress', {
+        description: RUNNING_ACTION_DISABLED_MESSAGE,
+        duration: TOAST_DURATION_SHORT_MS,
+      });
+      return;
+    }
     const originalScheduler = schedulers.find(s => s.id === scheduler.id);
     setEditingScheduler(originalScheduler);
     setEditDrawerOpen(true);
@@ -608,6 +808,13 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   };
 
   const handleOpenSingleStatusDialog = (schedulerId: string, currentState: boolean) => {
+    if (runningSchedulerIds.includes(schedulerId)) {
+      toast.info('Running in progress', {
+        description: RUNNING_ACTION_DISABLED_MESSAGE,
+        duration: TOAST_DURATION_SHORT_MS,
+      });
+      return;
+    }
     const mapped = mappedSchedulers.find((s) => s.id === schedulerId);
     setPendingSingleStatus({
       schedulerId,
@@ -623,11 +830,6 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
     const { schedulerId, action } = pendingSingleStatus;
     const nextActive = action === 'activate';
 
-    setActiveStates((prev) => ({
-      ...prev,
-      [schedulerId]: nextActive,
-    }));
-
     const raw = schedulers.find((s) => s.id === schedulerId);
     if (raw && onUpdateScheduler) {
       onUpdateScheduler(
@@ -639,8 +841,6 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
         { skipToast: true }
       );
     }
-
-    setStatusTab(nextActive ? 'active' : 'inactive');
 
     toast.success(
       nextActive
@@ -659,6 +859,11 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
         return mapped && raw && isSchedulerArchivable(raw, mapped.isActive);
       }),
     [selectedIds, mappedSchedulers, schedulers]
+  );
+
+  const hasSelectedShoppingSchedulers = useMemo(
+    () => selectedIds.some((id) => runningSchedulerIds.includes(id)),
+    [selectedIds, runningSchedulerIds]
   );
 
   const pendingArchiveSchedulers = useMemo(
@@ -760,8 +965,23 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 options={filterOptions}
                 filters={appliedFilters}
                 onFilterChange={handleMoreFilterChange}
-                onReset={handleResetMoreFilters}
               />
+
+              {hasActiveFilters && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-[#666666]">
+                    {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
+                  </span>
+                  <span className="text-gray-300" aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={handleResetAllFilters}
+                    className="text-[#ff9800] hover:text-[#f57c00] transition-colors font-normal"
+                  >
+                    Reset all filters
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>
@@ -783,23 +1003,36 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
             </div>
           )}
 
-          {needsAttentionCount > 0 && (
+          {needsAttentionCount > 0 && !needsAttentionBannerDismissed && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
-              <p className="text-sm text-red-900">
+              <p className="text-sm text-red-900 flex-1 min-w-0">
                 <span className="font-medium">{needsAttentionCount} imported scheduler{needsAttentionCount === 1 ? '' : 's'} need attention.</span>
                 {' '}Review and complete missing fields.
               </p>
-              <button
-                type="button"
-                onClick={() => setShowNeedsAttentionOnly((prev) => !prev)}
-                className={`text-sm font-medium px-3 py-1 rounded-md border transition-colors ${
-                  showNeedsAttentionOnly
-                    ? 'bg-red-200 border-red-400 text-red-900'
-                    : 'bg-white border-red-300 text-red-800 hover:bg-red-100'
-                }`}
-              >
-                {showNeedsAttentionOnly ? 'Show all' : 'Show only'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowNeedsAttentionOnly((prev) => !prev)}
+                  className={`text-sm font-medium px-3 py-1 rounded-md border transition-colors ${
+                    showNeedsAttentionOnly
+                      ? 'bg-red-200 border-red-400 text-red-900'
+                      : 'bg-white border-red-300 text-red-800 hover:bg-red-100'
+                  }`}
+                >
+                  {showNeedsAttentionOnly ? 'Show all' : 'Show only'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNeedsAttentionBannerDismissed(true);
+                    setShowNeedsAttentionOnly(false);
+                  }}
+                  aria-label="Dismiss needs attention alert"
+                  className="p-1.5 rounded-md text-red-700 hover:bg-red-100 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -807,18 +1040,39 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
             <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
               <span className="text-sm text-gray-800 font-medium">
                 {selectedIds.length} scheduler{selectedIds.length === 1 ? '' : 's'} selected
+                {selectedIds.length > ON_DEMAND_RUN_MAX_SCHEDULERS && (
+                  <span className="text-gray-600 font-normal">
+                    {' '}
+                    · Bulk actions apply to all {selectedIds.length}
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-2 flex-wrap justify-end">
-                <CustomButton variant="outline" size="sm" onClick={() => setBulkEditDrawerOpen(true)}>
+                <CustomButton
+                  variant="outline"
+                  size="sm"
+                  disabled={hasSelectedShoppingSchedulers}
+                  onClick={handleOpenBulkEdit}
+                >
                   <Edit className="h-3.5 w-3.5" />
                   Bulk Edit
                 </CustomButton>
                 {statusTab === 'active' ? (
-                  <CustomButton variant="outline" size="sm" onClick={() => handleOpenBulkStatusDialog('deactivate')}>
+                  <CustomButton
+                    variant="outline"
+                    size="sm"
+                    disabled={hasSelectedShoppingSchedulers}
+                    onClick={() => handleOpenBulkStatusDialog('deactivate')}
+                  >
                     Deactivate
                   </CustomButton>
                 ) : (
-                  <CustomButton variant="outline" size="sm" onClick={() => handleOpenBulkStatusDialog('activate')}>
+                  <CustomButton
+                    variant="outline"
+                    size="sm"
+                    disabled={hasSelectedShoppingSchedulers}
+                    onClick={() => handleOpenBulkStatusDialog('activate')}
+                  >
                     Activate
                   </CustomButton>
                 )}
@@ -887,16 +1141,20 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
 
               <div className="hidden lg:block w-px h-9 bg-gray-300 shrink-0" aria-hidden="true" />
 
-              <div className="relative w-full sm:w-[340px] shrink-0">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                <input
-                  type="search"
-                  aria-label="Search schedulers in current tab"
-                  placeholder="Search by Scheduler, brand, location name"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-9 pl-9 pr-3 border border-gray-300 bg-white rounded text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
-                />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full lg:w-auto lg:flex-1 min-w-0">
+                <div className="relative w-full sm:w-[340px] shrink-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <input
+                    type="search"
+                    aria-label="Search schedulers in current tab"
+                    placeholder="Search by Scheduler, brand, location name"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full h-9 pl-9 pr-3 border border-gray-300 bg-white rounded text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-[#ff9800] focus:border-[#ff9800]"
+                  />
+                </div>
+
+                {renderOnDemandRunToolbarActions()}
               </div>
 
               <p className="text-xs sm:text-sm text-[#666666] shrink-0 lg:text-right lg:ml-auto">
@@ -909,13 +1167,35 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                     hasRefinements: hasListRefinements,
                     entityLabel: 'scheduler',
                   })}
-                  {hasActiveFilters && (
-                    <span className="text-[#ff9800]">
-                      {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
-                    </span>
-                  )}
                 </p>
             </div>
+
+            {!runCoachMarkDismissed && mappedSchedulers.some((scheduler) => scheduler.isActive) && (
+              <div className="relative" role="status" aria-live="polite">
+                <div className="bg-[#fff8e1] border border-[#ffcc80] rounded-lg px-4 py-3 flex items-start justify-between gap-4 shadow-sm">
+                  <div className="flex gap-3 min-w-0">
+                    <Zap className="h-5 w-5 text-[#ff9800] shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Select up to 2 schedulers</p>
+                      <p className="text-sm text-gray-600 mt-0.5">
+                        in the table below, then click Run to view recommended prices on the technical chart.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={dismissRunCoachMark}
+                    className="text-sm font-medium text-[#ff9800] hover:text-[#f57c00] whitespace-nowrap shrink-0"
+                  >
+                    Got it
+                  </button>
+                </div>
+                <div
+                  className="absolute left-8 -bottom-2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-l-transparent border-r-transparent border-t-[#ffcc80]"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
 
             <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
             <div className="relative bg-white">
@@ -1012,9 +1292,14 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
               ) : (
               paginatedSchedulers.map((scheduler) => {
                 const isSelected = selectedIds.includes(scheduler.id);
+                const isShopping = runningSchedulerIds.includes(scheduler.id);
                 const needsAttention = scheduler.importStatus === 'needs_attention';
-                const stickyBg = getStickyCellBg(scheduler.importStatus, isSelected);
-                const stickyHover = getStickyCellHover(scheduler.importStatus, isSelected);
+                const stickyBg = isShopping
+                  ? 'bg-blue-50'
+                  : getStickyCellBg(scheduler.importStatus, isSelected);
+                const stickyHover = isShopping
+                  ? 'group-hover:bg-blue-50'
+                  : getStickyCellHover(scheduler.importStatus, isSelected);
                 const rawScheduler = schedulers.find((s) => s.id === scheduler.id);
                 const canArchive =
                   statusTab === 'inactive' &&
@@ -1025,18 +1310,38 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 <tr
                   key={scheduler.id}
                   className={`group transition-colors ${
-                    needsAttention
+                    isShopping
+                      ? 'bg-blue-50/60 border-l-4 border-l-blue-500'
+                      : needsAttention
                       ? 'bg-red-50/50 border-l-4 border-l-red-500'
                       : 'hover:bg-gray-50'
-                  } ${isSelected ? 'bg-orange-50/50' : ''}`}
+                  } ${isSelected && !isShopping ? 'bg-orange-50/50' : ''}`}
                 >
                   <td className={`px-4 py-3 ${STICKY_COL_CHECKBOX} ${STICKY_BORDER} ${stickyBg} ${stickyHover}`}>
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => handleToggleSelect(scheduler.id)}
-                      aria-label={`Select ${scheduler.name}`}
-                      className="border-[#ff9800] data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
-                    />
+                    {isShopping ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex">
+                            <Checkbox
+                              checked={false}
+                              disabled
+                              aria-label={`${scheduler.name} is running`}
+                              className="border-gray-300 opacity-50 cursor-not-allowed"
+                            />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          Running in progress. You can select this scheduler again once it completes.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => handleToggleSelect(scheduler.id)}
+                        aria-label={`Select ${scheduler.name}`}
+                        className="border-[#ff9800] data-[state=checked]:bg-[#ff9800] data-[state=checked]:border-[#ff9800]"
+                      />
+                    )}
                   </td>
                   <td className={`px-4 py-3 text-sm text-gray-900 ${STICKY_COL_NAME} ${STICKY_BORDER} ${stickyBg} ${stickyHover}`}>
                     <div className="flex items-center gap-2 min-w-0 w-full overflow-hidden">
@@ -1050,7 +1355,13 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                           {scheduler.name}
                         </TooltipContent>
                       </Tooltip>
-                      {needsAttention && (
+                      {isShopping && (
+                        <span className="inline-flex shrink-0 items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-300">
+                          <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                          Running...
+                        </span>
+                      )}
+                      {needsAttention && !isShopping && (
                         <button
                           type="button"
                           onClick={() => handleNeedsAttentionClick(scheduler)}
@@ -1085,17 +1396,51 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                   <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{scheduler.recurrence}</td>
                   <td className={`px-4 py-3 whitespace-nowrap ${STICKY_COL_ACTION} ${stickyBg} ${stickyHover}`}>
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={scheduler.isActive}
-                        onCheckedChange={() => handleOpenSingleStatusDialog(scheduler.id, scheduler.isActive)}
-                      />
-                      <button
-                        onClick={() => handleEditClick(scheduler)}
-                        className="p-1.5 hover:bg-gray-100 rounded transition-colors"
-                        title="Edit Scheduler"
-                      >
-                        <Edit className="h-4 w-4 text-gray-600" />
-                      </button>
+                      {isShopping ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Switch checked={scheduler.isActive} disabled />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {RUNNING_ACTION_DISABLED_MESSAGE}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Switch
+                          checked={scheduler.isActive}
+                          onCheckedChange={() => handleOpenSingleStatusDialog(scheduler.id, scheduler.isActive)}
+                        />
+                      )}
+                      {isShopping ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <button
+                                type="button"
+                                disabled
+                                className="p-1.5 rounded transition-colors opacity-50 cursor-not-allowed"
+                                aria-label="Edit scheduler unavailable while running"
+                              >
+                                <Edit className="h-4 w-4 text-gray-600" />
+                              </button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {RUNNING_ACTION_DISABLED_MESSAGE}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleEditClick(scheduler)}
+                          className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                          title="Edit Scheduler"
+                        >
+                          <Edit className="h-4 w-4 text-gray-600" />
+                        </button>
+                      )}
                       {canArchive && (
                         <button
                           onClick={() => handleOpenArchiveDialog([scheduler.id])}
@@ -1219,21 +1564,21 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
           if (!open) handleCloseBulkStatusDialog();
         }}
       >
-        <AlertDialogContent className="overflow-hidden">
-          <AlertDialogHeader>
+        <AlertDialogContent className="overflow-hidden sm:max-w-lg">
+          <AlertDialogHeader className="text-left">
             <AlertDialogTitle>
               {pendingBulkStatus === 'activate'
                 ? `Activate ${selectedIds.length} scheduler${selectedIds.length === 1 ? '' : 's'}?`
                 : `Deactivate ${selectedIds.length} scheduler${selectedIds.length === 1 ? '' : 's'}?`}
             </AlertDialogTitle>
-          </AlertDialogHeader>
-
-          <div className="space-y-3 min-w-0">
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-left text-gray-600">
               {pendingBulkStatus === 'activate'
                 ? 'You are about to activate the selected schedulers.'
                 : 'You are about to deactivate the selected schedulers.'}
             </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 min-w-0 text-left">
 
             {pendingBulkStatus === 'activate' && (() => {
               const alreadyActive = selectedSchedulers.filter((s) => s.isActive).length;
@@ -1329,21 +1674,24 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
           if (!open) handleCloseSingleStatusDialog();
         }}
       >
-        <AlertDialogContent className="overflow-hidden">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="break-words">
+        <AlertDialogContent className="overflow-hidden sm:max-w-lg">
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle>
               {pendingSingleStatus?.action === 'activate'
-                ? `Activate scheduler: ${pendingSingleStatus.name}?`
-                : `Deactivate scheduler: ${pendingSingleStatus?.name ?? 'Scheduler'}?`}
+                ? 'Activate scheduler?'
+                : 'Deactivate scheduler?'}
             </AlertDialogTitle>
-          </AlertDialogHeader>
-
-          <div className="space-y-3 min-w-0">
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-left text-gray-600">
               {pendingSingleStatus?.action === 'activate'
                 ? 'You are about to activate this scheduler.'
                 : 'You are about to deactivate this scheduler.'}
             </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 min-w-0 text-left">
+            <p className="text-sm font-medium text-[#2c3e50] break-words border border-gray-200 bg-gray-50 rounded-md px-3 py-2">
+              {pendingSingleStatus?.name ?? 'Scheduler'}
+            </p>
 
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
               <p className="text-amber-900 font-medium mb-2">What will happen:</p>

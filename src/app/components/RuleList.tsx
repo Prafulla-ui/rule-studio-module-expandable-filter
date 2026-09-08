@@ -475,12 +475,8 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
     setAppliedFilters({ ...appliedFilters, [key]: value });
   };
 
-  const handleResetMoreFilters = () => {
-    const nextApplied = { ...appliedFilters };
-    RULE_MORE_FILTER_FIELDS.forEach(({ key }) => {
-      nextApplied[key] = [];
-    });
-    setAppliedFilters(nextApplied);
+  const handleResetAllFilters = () => {
+    setAppliedFilters(emptyRuleFilters());
   };
 
   const handlePrimaryFilterChange = (key: keyof RuleFilterState, value: string[]) => {
@@ -864,8 +860,23 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
                   options={filterOptions}
                   filters={appliedFilters}
                   onFilterChange={handleMoreFilterChange}
-                  onReset={handleResetMoreFilters}
                 />
+
+                {hasActiveFilters && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[#666666]">
+                      {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
+                    </span>
+                    <span className="text-gray-300" aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      onClick={handleResetAllFilters}
+                      className="text-[#ff9800] hover:text-[#f57c00] transition-colors font-normal"
+                    >
+                      Reset all filters
+                    </button>
+                  </div>
+                )}
             </div>
 
         </div>
@@ -929,11 +940,6 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
                 hasRefinements: hasListRefinements,
                 entityLabel: 'rule',
               })}
-                {hasActiveFilters && (
-                  <span className="text-[#ff9800]">
-                    {' '}· {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied
-                  </span>
-                )}
               </p>
           </div>
 

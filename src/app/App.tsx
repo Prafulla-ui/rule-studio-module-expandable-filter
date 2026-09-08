@@ -156,9 +156,13 @@ export default function App() {
   };
 
   const handleUpdateScheduler = (updatedScheduler: any, options?: { skipToast?: boolean }) => {
-    setSchedulers(schedulers.map(scheduler => 
-      scheduler.id === updatedScheduler.id ? updatedScheduler : scheduler
-    ));
+    if (!updatedScheduler?.id) return;
+
+    setSchedulers((prev) =>
+      prev.map((scheduler) =>
+        scheduler.id === updatedScheduler.id ? updatedScheduler : scheduler
+      )
+    );
     if (!options?.skipToast) {
       toast.success('Scheduler updated successfully!', {
         description: `"${updatedScheduler.scheduleName}" has been updated.`,
@@ -172,9 +176,11 @@ export default function App() {
   };
 
   const handleBulkUpdateSchedulers = (schedulerIds: string[], updates: Record<string, any>) => {
-    setSchedulers(schedulers.map(scheduler =>
-      schedulerIds.includes(scheduler.id) ? { ...scheduler, ...updates } : scheduler
-    ));
+    setSchedulers((prev) =>
+      prev.map((scheduler) =>
+        schedulerIds.includes(scheduler.id) ? { ...scheduler, ...updates } : scheduler
+      )
+    );
     toast.success(`Updated ${schedulerIds.length} scheduler(s)`);
   };
 
@@ -196,7 +202,7 @@ export default function App() {
     return (
       <>
         <Login onLogin={handleLogin} />
-        <Toaster position="top-right" />
+        <Toaster position="top-right" duration={15000} expand={false} visibleToasts={3} closeButton />
       </>
     );
   }
@@ -255,8 +261,12 @@ export default function App() {
       <Toaster 
         position="top-right" 
         richColors 
-        expand={true}
+        expand={false}
+        duration={15000}
+        visibleToasts={3}
+        closeButton
         toastOptions={{
+          duration: 15000,
           style: {
             padding: '16px',
             fontSize: '15px',

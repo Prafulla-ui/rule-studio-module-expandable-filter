@@ -10,7 +10,6 @@ interface SchedulerFilterPanelProps {
   options: SchedulerFilterOptions;
   filters: SchedulerFilterState;
   onFilterChange: (key: keyof SchedulerFilterState, value: string[]) => void;
-  onReset: () => void;
 }
 
 export function SchedulerFilterPanel({
@@ -18,7 +17,6 @@ export function SchedulerFilterPanel({
   options,
   filters,
   onFilterChange,
-  onReset,
 }: SchedulerFilterPanelProps) {
   return (
     <div
@@ -44,15 +42,6 @@ export function SchedulerFilterPanel({
                 />
               </div>
             ))}
-          </div>
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={onReset}
-              className="text-[#ff9800] hover:text-[#f57c00] transition-colors font-normal text-sm"
-            >
-              Reset more filters
-            </button>
           </div>
         </div>
       </div>
