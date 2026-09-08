@@ -320,8 +320,43 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   const [runCoachMarkDismissed, setRunCoachMarkDismissed] = useState(
     () => localStorage.getItem(RUN_COACH_MARK_STORAGE_KEY) === 'true'
   );
+  const runToolbarActionsRef = useRef<HTMLDivElement>(null);
+  const runCoachMarkRef = useRef<HTMLDivElement>(null);
+  const toolbarRowRef = useRef<HTMLDivElement>(null);
+  const [runCoachPointerLeft, setRunCoachPointerLeft] = useState<number | null>(null);
 
   const filterOptions = useMemo(() => buildFilterOptions(schedulers.filter((s) => !s.isArchived)), [schedulers]);
+
+  useEffect(() => {
+    if (runCoachMarkDismissed) return;
+
+    const updateRunCoachPointerPosition = () => {
+      requestAnimationFrame(() => {
+        const toolbarEl = runToolbarActionsRef.current;
+        const coachEl = runCoachMarkRef.current;
+        if (!toolbarEl || !coachEl) return;
+
+        const toolbarRect = toolbarEl.getBoundingClientRect();
+        const coachRect = coachEl.getBoundingClientRect();
+        const centerX = toolbarRect.left + toolbarRect.width / 2 - coachRect.left;
+        setRunCoachPointerLeft(Math.max(24, Math.min(centerX, coachRect.width - 24)));
+      });
+    };
+
+    updateRunCoachPointerPosition();
+    window.addEventListener('resize', updateRunCoachPointerPosition);
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateRunCoachPointerPosition) : null;
+    if (resizeObserver && toolbarRowRef.current) {
+      resizeObserver.observe(toolbarRowRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateRunCoachPointerPosition);
+      resizeObserver?.disconnect();
+    };
+  }, [runCoachMarkDismissed, statusTab]);
 
   useEffect(() => {
     return () => {
@@ -654,20 +689,20 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
       <PopoverContent className="w-72 p-3" align="end">
         <p className="text-sm font-medium text-[#2c3e50] mb-1.5">On-demand run</p>
         <p className="text-xs text-gray-700 leading-relaxed">
-          Run up to two active schedulers now to get recommended prices on the Technical Chart.
+          Shop the latest market data on demand and push updated rates—without waiting for the next
+          scheduled run.
         </p>
         <ul className="text-xs text-gray-700 leading-relaxed mt-2 space-y-1 list-disc pl-4">
-          <li>Select schedulers using the row checkboxes.</li>
+          <li>Select up to 2 active schedulers.</li>
           <li>Click <span className="font-medium">Run Selected Schedulers</span>.</li>
-          <li>A <span className="font-medium">Running</span> badge shows progress in the list.</li>
-          <li>You&apos;ll get a <span className="font-medium">notification email</span> when the run completes.</li>
+          <li>A <span className="font-medium">Running</span> badge shows progress until rates are ready on the Technical Chart.</li>
         </ul>
       </PopoverContent>
     </Popover>
   );
 
   const renderOnDemandRunToolbarActions = () => (
-    <div className="inline-flex items-center gap-1.5 w-full sm:w-auto">
+    <div ref={runToolbarActionsRef} className="inline-flex items-center gap-1.5 w-full sm:w-auto">
       {renderRunSelectedSchedulersButton()}
       {renderOnDemandRunInfoPopover()}
     </div>
@@ -1099,7 +1134,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
 
           {/* Status tabs + Table */}
           <div className="space-y-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+            <div ref={toolbarRowRef} className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
               <div
                 className="inline-flex items-center p-1 h-9 rounded-lg bg-gray-100 border border-gray-300 shrink-0"
                 role="tablist"
@@ -1171,14 +1206,36 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
             </div>
 
             {!runCoachMarkDismissed && mappedSchedulers.some((scheduler) => scheduler.isActive) && (
-              <div className="relative" role="status" aria-live="polite">
+              <div ref={runCoachMarkRef} className="relative" role="status" aria-live="polite">
+                <div
+                  className="absolute -top-2 w-0 h-0 border-l-[10px] border-r-[10px] border-b-[10px] border-l-transparent border-r-transparent border-b-[#ffcc80] transition-opacity duration-150"
+                  style={{
+                    left: runCoachPointerLeft ?? 0,
+                    transform: 'translateX(-50%)',
+                    opacity: runCoachPointerLeft === null ? 0 : 1,
+                  }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="absolute -top-[7px] w-0 h-0 border-l-[8px] border-r-[8px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#fff8e1] transition-opacity duration-150"
+                  style={{
+                    left: runCoachPointerLeft ?? 0,
+                    transform: 'translateX(-50%)',
+                    opacity: runCoachPointerLeft === null ? 0 : 1,
+                  }}
+                  aria-hidden="true"
+                />
                 <div className="bg-[#fff8e1] border border-[#ffcc80] rounded-lg px-4 py-3 flex items-start justify-between gap-4 shadow-sm">
                   <div className="flex gap-3 min-w-0">
                     <Zap className="h-5 w-5 text-[#ff9800] shrink-0 mt-0.5" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Select up to 2 schedulers</p>
+                      <p className="text-sm font-medium text-gray-900">Run Selected Schedulers</p>
                       <p className="text-sm text-gray-600 mt-0.5">
-                        in the table below, then click Run to view recommended prices on the technical chart.
+                        Shop the latest market data on demand and push updated rates—without waiting for
+                        the next scheduled run. Select up to 2 active schedulers below, click{' '}
+                        <span className="font-medium">Run Selected Schedulers</span>, and watch the{' '}
+                        <span className="font-medium">Running</span> badge until rates are ready on the
+                        Technical Chart.
                       </p>
                     </div>
                   </div>
@@ -1190,10 +1247,6 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                     Got it
                   </button>
                 </div>
-                <div
-                  className="absolute left-8 -bottom-2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-l-transparent border-r-transparent border-t-[#ffcc80]"
-                  aria-hidden="true"
-                />
               </div>
             )}
 
