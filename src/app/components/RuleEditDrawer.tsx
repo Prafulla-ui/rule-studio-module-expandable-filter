@@ -18,8 +18,11 @@ import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { extractRuleFormState } from '../utils/ruleFormHydration';
 import { CustomButton } from './CustomButton';
 import { DefineRuleSection, getDefineRuleSectionValues } from './DefineRuleSection';
-import { DEFAULT_DEFINE_RULE_ATTRIBUTES } from '../constants/ruleDefineOptions';
-import { CustomSelect } from './CustomSelect';
+import {
+  DEFAULT_DEFINE_RULE_ATTRIBUTES,
+  RULE_VENDOR_PRICE_OPTIONS,
+  resolveSelectedOptions,
+} from '../constants/ruleDefineOptions';
 import { MultiSelect } from './MultiSelect';
 
 interface RuleEditDrawerProps {
@@ -94,6 +97,7 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
         currentPriceUnit: '$',
         byFix: 'Lower',
         min: 'Min',
+        minMaxOptionsTop: [] as string[],
         minMaxOptions: [] as string[],
         minMaxValue: '',
         minMaxValueUnit: '%',
@@ -114,8 +118,6 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
   const conditionTypes = ['Utilization', 'Day of Week', 'Time of Day', 'Competitor Price', 'Booking Volume', 'Historical Demand', 'Lead Time', 'Season'];
   const operators = ['Less than', 'Greater than', 'Equal to', 'Less or Equal', 'Greater or Equal', 'Range', 'Equal to or more than', 'Equal to or less than'];
   const actionTypes = ['Alert Only', 'Value', 'Vendor Price', 'Rank'];
-  const optionsForSelect = ['Hertz', 'Budget', 'National', 'Alamo', 'Sixt', 'Enterprise', 'Avis', 'Thrifty', 'Dollar'];
-
   useEffect(() => {
     if (!open || !rule) {
       return;
@@ -426,8 +428,9 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
                         <MultiSelect
                           value={condition.leftOptions}
                           onChange={(leftOptions) => updateFirstCondition(index, 'leftOptions', leftOptions)}
-                          options={optionsForSelect}
+                          options={RULE_VENDOR_PRICE_OPTIONS}
                           placeholder="Select *"
+                          selectAllLabel="All"
                         />
                       </div>
 
@@ -479,8 +482,9 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
                         <MultiSelect
                           value={condition.rightOptions}
                           onChange={(rightOptions) => updateFirstCondition(index, 'rightOptions', rightOptions)}
-                          options={optionsForSelect}
+                          options={RULE_VENDOR_PRICE_OPTIONS}
                           placeholder="Select *"
+                          selectAllLabel="All"
                         />
                       </div>
 
@@ -872,9 +876,12 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
 
                                       {/* Select some options - Reduced width by 50% */}
                                       <div className="w-1/4">
-                                        <CustomSelect
-                                          value={rule.currentPriceDetails?.minMaxOption || ''}
-                                          onChange={(value) => {
+                                        <MultiSelect
+                                          value={resolveSelectedOptions(
+                                            rule.currentPriceDetails?.minMaxOptions,
+                                            rule.currentPriceDetails?.minMaxOption
+                                          )}
+                                          onChange={(minMaxOptions) => {
                                             setRuleData(prev => ({
                                               ...prev,
                                               conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -882,20 +889,16 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
                                                   ...r,
                                                   currentPriceDetails: {
                                                     ...r.currentPriceDetails,
-                                                    minMaxOption: value
+                                                    minMaxOptions
                                                   }
                                                 } : r
                                               )
                                             }));
                                           }}
-                                          options={[
-                                            { value: 'Option 1', label: 'Option 1' },
-                                            { value: 'Option 2', label: 'Option 2' },
-                                            { value: 'Option 3', label: 'Option 3' },
-                                            { value: 'Option 4', label: 'Option 4' },
-                                            { value: 'Option 5', label: 'Option 5' }
-                                          ]}
+                                          options={RULE_VENDOR_PRICE_OPTIONS}
                                           placeholder="Select some options"
+                                          selectAllLabel="All"
+                                          compact
                                         />
                                       </div>
 
@@ -1040,9 +1043,12 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
 
                                     {/* Select some options - Reduced width by 50% */}
                                     <div className="w-1/4">
-                                      <CustomSelect
-                                        value={rule.vendorPriceDetails?.minMaxOptionTop || ''}
-                                        onChange={(value) => {
+                                      <MultiSelect
+                                        value={resolveSelectedOptions(
+                                          rule.vendorPriceDetails?.minMaxOptionsTop,
+                                          rule.vendorPriceDetails?.minMaxOptionTop
+                                        )}
+                                        onChange={(minMaxOptionsTop) => {
                                           setRuleData(prev => ({
                                             ...prev,
                                             conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -1050,20 +1056,16 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
                                                 ...r,
                                                 vendorPriceDetails: {
                                                   ...r.vendorPriceDetails,
-                                                  minMaxOptionTop: value
+                                                  minMaxOptionsTop
                                                 }
                                               } : r
                                             )
                                           }));
                                         }}
-                                        options={[
-                                          { value: 'Option 1', label: 'Option 1' },
-                                          { value: 'Option 2', label: 'Option 2' },
-                                          { value: 'Option 3', label: 'Option 3' },
-                                          { value: 'Option 4', label: 'Option 4' },
-                                          { value: 'Option 5', label: 'Option 5' }
-                                        ]}
+                                        options={RULE_VENDOR_PRICE_OPTIONS}
                                         placeholder="Select some options"
+                                        selectAllLabel="All"
+                                        compact
                                       />
                                     </div>
 
@@ -1197,9 +1199,12 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
 
                                       {/* Select some options - Reduced width by 50% */}
                                       <div className="w-1/4">
-                                        <CustomSelect
-                                          value={rule.vendorPriceDetails?.minMaxOption || ''}
-                                          onChange={(value) => {
+                                        <MultiSelect
+                                          value={resolveSelectedOptions(
+                                            rule.vendorPriceDetails?.minMaxOptions,
+                                            rule.vendorPriceDetails?.minMaxOption
+                                          )}
+                                          onChange={(minMaxOptions) => {
                                             setRuleData(prev => ({
                                               ...prev,
                                               conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -1207,20 +1212,16 @@ export function RuleEditDrawer({ open, onOpenChange, rule, onSave }: RuleEditDra
                                                   ...r,
                                                   vendorPriceDetails: {
                                                     ...r.vendorPriceDetails,
-                                                    minMaxOption: value
+                                                    minMaxOptions
                                                   }
                                                 } : r
                                               )
                                             }));
                                           }}
-                                          options={[
-                                            { value: 'Option 1', label: 'Option 1' },
-                                            { value: 'Option 2', label: 'Option 2' },
-                                            { value: 'Option 3', label: 'Option 3' },
-                                            { value: 'Option 4', label: 'Option 4' },
-                                            { value: 'Option 5', label: 'Option 5' }
-                                          ]}
+                                          options={RULE_VENDOR_PRICE_OPTIONS}
                                           placeholder="Select some options"
+                                          selectAllLabel="All"
+                                          compact
                                         />
                                       </div>
 

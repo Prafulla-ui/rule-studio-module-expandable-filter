@@ -10,6 +10,28 @@ export const RULE_BRAND_OPTIONS = [
   'Sixt',
 ];
 
+/** Vendor options for price rule Min/Max multi-select dropdowns */
+export const RULE_VENDOR_PRICE_OPTIONS = [
+  'Alamo',
+  'Avis',
+  'Budget',
+  'Dollar',
+  'Enterprise',
+  'Hertz',
+  'National',
+  'Sixt',
+  'Thrifty',
+];
+
+export function resolveSelectedOptions(
+  options?: string[] | null,
+  legacyValue?: string | null
+): string[] {
+  if (options?.length) return options;
+  if (legacyValue) return [legacyValue];
+  return [];
+}
+
 export const RULE_PICKUP_LOCATION_OPTIONS = [
   'YLW',
   'LAS',

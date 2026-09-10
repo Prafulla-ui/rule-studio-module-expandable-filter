@@ -156,19 +156,27 @@ export default function App() {
   };
 
   const handleUpdateScheduler = (updatedScheduler: any, options?: { skipToast?: boolean }) => {
-    if (!updatedScheduler?.id) return;
+    if (updatedScheduler?.id == null) return false;
 
+    let found = false;
     setSchedulers((prev) =>
-      prev.map((scheduler) =>
-        scheduler.id === updatedScheduler.id ? updatedScheduler : scheduler
-      )
+      prev.map((scheduler) => {
+        if (String(scheduler.id) !== String(updatedScheduler.id)) return scheduler;
+        found = true;
+        return { ...scheduler, ...updatedScheduler };
+      })
     );
+
+    if (!found) return false;
+
     if (!options?.skipToast) {
       toast.success('Scheduler updated successfully!', {
-        description: `"${updatedScheduler.scheduleName}" has been updated.`,
+        description: `"${updatedScheduler.scheduleName ?? 'Scheduler'}" has been updated.`,
         duration: 4000,
       });
     }
+
+    return true;
   };
 
   const handleDeleteScheduler = (schedulerId: string) => {

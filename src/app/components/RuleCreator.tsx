@@ -6,7 +6,11 @@ import {
   isDefineRuleUnchanged,
   isDuplicateNameTaken,
 } from '../utils/ruleDuplicate';
-import { DEFAULT_DEFINE_RULE_ATTRIBUTES } from '../constants/ruleDefineOptions';
+import {
+  DEFAULT_DEFINE_RULE_ATTRIBUTES,
+  RULE_VENDOR_PRICE_OPTIONS,
+  resolveSelectedOptions,
+} from '../constants/ruleDefineOptions';
 import { DefineRuleSection, getDefineRuleSectionValues } from './DefineRuleSection';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
@@ -14,7 +18,6 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { CustomSelect } from './CustomSelect';
 import { MultiSelect } from './MultiSelect';
 
 interface RuleCreatorProps {
@@ -76,6 +79,7 @@ const defaultConditionalRule = {
     currentPriceUnit: '$',
     byFix: 'Lower',
     min: 'Min',
+    minMaxOptionsTop: [] as string[],
     minMaxOptions: [] as string[],
     minMaxValue: '',
     minMaxValueUnit: '%',
@@ -173,8 +177,6 @@ export function RuleCreator({
   const conditionTypes = ['Utilization', 'Day of Week', 'Time of Day', 'Competitor Price', 'Booking Volume', 'Historical Demand', 'Lead Time', 'Season'];
   const operators = ['Less than', 'Greater than', 'Equal to', 'Less or Equal', 'Greater or Equal', 'Range', 'Equal to or more than', 'Equal to or less than'];
   const actionTypes = ['Alert Only', 'Value', 'Vendor Price', 'Rank'];
-  const optionsForSelect = ['Hertz', 'Budget', 'National', 'Alamo', 'Sixt', 'Enterprise', 'Avis', 'Thrifty', 'Dollar'];
-
   const addApplyRule = () => {
     setRuleData(prev => ({
       ...prev,
@@ -524,8 +526,9 @@ export function RuleCreator({
                         <MultiSelect
                           value={condition.leftOptions}
                           onChange={(leftOptions) => updateFirstCondition(index, 'leftOptions', leftOptions)}
-                          options={optionsForSelect}
+                          options={RULE_VENDOR_PRICE_OPTIONS}
                           placeholder="Select *"
+                          selectAllLabel="All"
                         />
                       </div>
 
@@ -577,8 +580,9 @@ export function RuleCreator({
                         <MultiSelect
                           value={condition.rightOptions}
                           onChange={(rightOptions) => updateFirstCondition(index, 'rightOptions', rightOptions)}
-                          options={optionsForSelect}
+                          options={RULE_VENDOR_PRICE_OPTIONS}
                           placeholder="Select *"
+                          selectAllLabel="All"
                         />
                       </div>
 
@@ -970,9 +974,12 @@ export function RuleCreator({
 
                                       {/* Select some options - Reduced width by 50% */}
                                       <div className="w-1/4">
-                                        <CustomSelect
-                                          value={rule.currentPriceDetails?.minMaxOption || ''}
-                                          onChange={(value) => {
+                                        <MultiSelect
+                                          value={resolveSelectedOptions(
+                                            rule.currentPriceDetails?.minMaxOptions,
+                                            rule.currentPriceDetails?.minMaxOption
+                                          )}
+                                          onChange={(minMaxOptions) => {
                                             setRuleData(prev => ({
                                               ...prev,
                                               conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -980,20 +987,16 @@ export function RuleCreator({
                                                   ...r,
                                                   currentPriceDetails: {
                                                     ...r.currentPriceDetails,
-                                                    minMaxOption: value
+                                                    minMaxOptions
                                                   }
                                                 } : r
                                               )
                                             }));
                                           }}
-                                          options={[
-                                            { value: 'Option 1', label: 'Option 1' },
-                                            { value: 'Option 2', label: 'Option 2' },
-                                            { value: 'Option 3', label: 'Option 3' },
-                                            { value: 'Option 4', label: 'Option 4' },
-                                            { value: 'Option 5', label: 'Option 5' }
-                                          ]}
+                                          options={RULE_VENDOR_PRICE_OPTIONS}
                                           placeholder="Select some options"
+                                          selectAllLabel="All"
+                                          compact
                                         />
                                       </div>
 
@@ -1138,9 +1141,12 @@ export function RuleCreator({
 
                                     {/* Select some options - Reduced width by 50% */}
                                     <div className="w-1/4">
-                                      <CustomSelect
-                                        value={rule.vendorPriceDetails?.minMaxOptionTop || ''}
-                                        onChange={(value) => {
+                                      <MultiSelect
+                                        value={resolveSelectedOptions(
+                                          rule.vendorPriceDetails?.minMaxOptionsTop,
+                                          rule.vendorPriceDetails?.minMaxOptionTop
+                                        )}
+                                        onChange={(minMaxOptionsTop) => {
                                           setRuleData(prev => ({
                                             ...prev,
                                             conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -1148,20 +1154,16 @@ export function RuleCreator({
                                                 ...r,
                                                 vendorPriceDetails: {
                                                   ...r.vendorPriceDetails,
-                                                  minMaxOptionTop: value
+                                                  minMaxOptionsTop
                                                 }
                                               } : r
                                             )
                                           }));
                                         }}
-                                        options={[
-                                          { value: 'Option 1', label: 'Option 1' },
-                                          { value: 'Option 2', label: 'Option 2' },
-                                          { value: 'Option 3', label: 'Option 3' },
-                                          { value: 'Option 4', label: 'Option 4' },
-                                          { value: 'Option 5', label: 'Option 5' }
-                                        ]}
+                                        options={RULE_VENDOR_PRICE_OPTIONS}
                                         placeholder="Select some options"
+                                        selectAllLabel="All"
+                                        compact
                                       />
                                     </div>
 
@@ -1295,9 +1297,12 @@ export function RuleCreator({
 
                                       {/* Select some options - Reduced width by 50% */}
                                       <div className="w-1/4">
-                                        <CustomSelect
-                                          value={rule.vendorPriceDetails?.minMaxOption || ''}
-                                          onChange={(value) => {
+                                        <MultiSelect
+                                          value={resolveSelectedOptions(
+                                            rule.vendorPriceDetails?.minMaxOptions,
+                                            rule.vendorPriceDetails?.minMaxOption
+                                          )}
+                                          onChange={(minMaxOptions) => {
                                             setRuleData(prev => ({
                                               ...prev,
                                               conditionalRules: prev.conditionalRules.map((r, i) =>
@@ -1305,20 +1310,16 @@ export function RuleCreator({
                                                   ...r,
                                                   vendorPriceDetails: {
                                                     ...r.vendorPriceDetails,
-                                                    minMaxOption: value
+                                                    minMaxOptions
                                                   }
                                                 } : r
                                               )
                                             }));
                                           }}
-                                          options={[
-                                            { value: 'Option 1', label: 'Option 1' },
-                                            { value: 'Option 2', label: 'Option 2' },
-                                            { value: 'Option 3', label: 'Option 3' },
-                                            { value: 'Option 4', label: 'Option 4' },
-                                            { value: 'Option 5', label: 'Option 5' }
-                                          ]}
+                                          options={RULE_VENDOR_PRICE_OPTIONS}
                                           placeholder="Select some options"
+                                          selectAllLabel="All"
+                                          compact
                                         />
                                       </div>
 

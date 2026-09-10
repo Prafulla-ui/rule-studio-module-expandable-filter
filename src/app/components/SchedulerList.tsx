@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { CustomButton } from './CustomButton';
 import { Search, Calendar, Info, Plus, Edit, ChevronsRight, ChevronsLeft, X, AlertTriangle, Archive, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Play, Zap, Loader2 } from 'lucide-react';
 import { SchedulerBulkEditDrawer, type BulkEditUpdates } from './SchedulerBulkEditDrawer';
@@ -124,7 +124,7 @@ function parseSchedulerDate(value: string | undefined): Date | null {
 }
 
 function getSchedulerIsActive(scheduler: any): boolean {
-  return scheduler.scheduleIsActive !== false;
+  return scheduler?.scheduleIsActive !== false;
 }
 
 function isSchedulerArchivable(scheduler: any, isActive: boolean): boolean {
@@ -165,7 +165,7 @@ interface Scheduler {
 interface SchedulerListProps {
   schedulers: any[];
   onCreateScheduler?: () => void;
-  onUpdateScheduler?: (updatedScheduler: any, options?: { skipToast?: boolean }) => void;
+  onUpdateScheduler?: (updatedScheduler: any, options?: { skipToast?: boolean }) => boolean | void;
   onDeleteScheduler?: (schedulerId: string) => void;
   onBulkUpdateSchedulers?: (schedulerIds: string[], updates: BulkEditUpdates) => void;
   onBulkDeleteSchedulers?: (schedulerIds: string[]) => void;
@@ -324,6 +324,37 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   const runCoachMarkRef = useRef<HTMLDivElement>(null);
   const toolbarRowRef = useRef<HTMLDivElement>(null);
   const [runCoachPointerLeft, setRunCoachPointerLeft] = useState<number | null>(null);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, boolean>>({});
+
+  const resolveSchedulerIsActive = useCallback(
+    (scheduler: any): boolean => {
+      const id = String(scheduler.id);
+      if (Object.prototype.hasOwnProperty.call(statusOverrides, id)) {
+        return statusOverrides[id];
+      }
+      return getSchedulerIsActive(scheduler);
+    },
+    [statusOverrides]
+  );
+
+  useEffect(() => {
+    setStatusOverrides((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+
+      const next = { ...prev };
+      let changed = false;
+
+      schedulers.forEach((scheduler) => {
+        const id = String(scheduler.id);
+        if (Object.prototype.hasOwnProperty.call(next, id) && getSchedulerIsActive(scheduler) === next[id]) {
+          delete next[id];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [schedulers]);
 
   const filterOptions = useMemo(() => buildFilterOptions(schedulers.filter((s) => !s.isArchived)), [schedulers]);
 
@@ -370,7 +401,9 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
   );
 
   // Map the schedulers data to the format expected by the table
-  const mappedSchedulers: Scheduler[] = visibleSchedulers.map((scheduler) => {
+  const mappedSchedulers: Scheduler[] = useMemo(
+    () =>
+      visibleSchedulers.map((scheduler) => {
     // Convert data to match table format
     const formatRecurrence = () => {
       if (scheduler.repeatType === 'doesNotRepeat') {
@@ -416,11 +449,13 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
       brand: scheduler.brand || '—',
       createdDate: formatListCreatedDate(scheduler.createdDate),
       createdDateRaw: scheduler.createdDate || '',
-      isActive: getSchedulerIsActive(scheduler),
+      isActive: resolveSchedulerIsActive(scheduler),
       importStatus: scheduler.importStatus ?? null,
       importValidationErrors: scheduler.importValidationErrors ?? [],
     };
-  });
+      }),
+    [visibleSchedulers, resolveSchedulerIsActive]
+  );
 
   const needsAttentionCount = useMemo(
     () => schedulers.filter((s) => s.importStatus === 'needs_attention').length,
@@ -762,7 +797,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
       onBulkUpdateSchedulers(selectedIds, { scheduleIsActive: active });
     } else {
       selectedIds.forEach((id) => {
-        const raw = schedulers.find((s) => s.id === id);
+        const raw = schedulers.find((s) => String(s.id) === String(id));
         if (raw && onUpdateScheduler) {
           onUpdateScheduler({ ...raw, scheduleIsActive: active }, { skipToast: true });
         }
@@ -865,17 +900,29 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
     const { schedulerId, action } = pendingSingleStatus;
     const nextActive = action === 'activate';
 
-    const raw = schedulers.find((s) => s.id === schedulerId);
-    if (raw && onUpdateScheduler) {
-      onUpdateScheduler(
-        {
-          ...raw,
-          scheduleIsActive: nextActive,
-          lastUsedAt: raw.lastUsedAt ?? new Date().toISOString(),
-        },
-        { skipToast: true }
-      );
+    const raw = schedulers.find((s) => String(s.id) === String(schedulerId));
+    if (!raw || !onUpdateScheduler) {
+      toast.error('Unable to update scheduler status. Please try again.');
+      handleCloseSingleStatusDialog();
+      return;
     }
+
+    const didUpdate = onUpdateScheduler(
+      {
+        id: schedulerId,
+        scheduleIsActive: nextActive,
+        lastUsedAt: raw.lastUsedAt ?? new Date().toISOString(),
+      },
+      { skipToast: true }
+    );
+
+    if (didUpdate === false) {
+      toast.error('Unable to update scheduler status. Please try again.');
+      handleCloseSingleStatusDialog();
+      return;
+    }
+
+    setStatusOverrides((prev) => ({ ...prev, [String(schedulerId)]: nextActive }));
 
     toast.success(
       nextActive
@@ -1353,7 +1400,10 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                 const stickyHover = isShopping
                   ? 'group-hover:bg-blue-50'
                   : getStickyCellHover(scheduler.importStatus, isSelected);
-                const rawScheduler = schedulers.find((s) => s.id === scheduler.id);
+                const rawScheduler = schedulers.find((s) => String(s.id) === String(scheduler.id));
+                const isSchedulerActive = rawScheduler
+                  ? resolveSchedulerIsActive(rawScheduler)
+                  : scheduler.isActive;
                 const canArchive =
                   statusTab === 'inactive' &&
                   rawScheduler &&
@@ -1453,7 +1503,7 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex">
-                              <Switch checked={scheduler.isActive} disabled />
+                              <Switch checked={isSchedulerActive} disabled />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-xs">
@@ -1461,10 +1511,22 @@ export function SchedulerList({ schedulers, onCreateScheduler, onUpdateScheduler
                           </TooltipContent>
                         </Tooltip>
                       ) : (
-                        <Switch
-                          checked={scheduler.isActive}
-                          onCheckedChange={() => handleOpenSingleStatusDialog(scheduler.id, scheduler.isActive)}
-                        />
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSingleStatusDialog(scheduler.id, isSchedulerActive)}
+                          className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff9800]/50"
+                          aria-label={
+                            isSchedulerActive
+                              ? `Deactivate ${scheduler.name}`
+                              : `Activate ${scheduler.name}`
+                          }
+                        >
+                          <Switch
+                            checked={isSchedulerActive}
+                            tabIndex={-1}
+                            className="pointer-events-none"
+                          />
+                        </button>
                       )}
                       {isShopping ? (
                         <Tooltip>

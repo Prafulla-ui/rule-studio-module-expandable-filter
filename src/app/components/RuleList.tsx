@@ -349,34 +349,65 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
         : demoSchedulerData;
 
   const handleBulkUpdateDemoOrReal = (schedulerIds: string[], updates: Record<string, any>) => {
-    if (onBulkUpdateSchedulers) {
-      onBulkUpdateSchedulers(schedulerIds, updates);
-      return;
-    }
-    if (schedulers.length > 0) {
-      schedulerIds.forEach((id) => {
-        const scheduler = schedulers.find((s) => s.id === id);
-        if (scheduler) onUpdateScheduler?.({ ...scheduler, ...updates });
-      });
-    } else {
+    if (schedulers.length === 0) {
       setDemoSchedulerData((prev) =>
-        prev.map((s) => (schedulerIds.includes(s.id) ? { ...s, ...updates } : s))
+        prev.map((s) =>
+          schedulerIds.some((id) => String(id) === String(s.id)) ? { ...s, ...updates } : s
+        )
       );
       toast.success(`Updated ${schedulerIds.length} scheduler(s)`);
+      return;
     }
+
+    onBulkUpdateSchedulers?.(schedulerIds, updates);
   };
 
   const handleBulkDeleteDemoOrReal = (schedulerIds: string[]) => {
-    if (onBulkDeleteSchedulers) {
-      onBulkDeleteSchedulers(schedulerIds);
+    if (schedulers.length === 0) {
+      setDemoSchedulerData((prev) =>
+        prev.filter((s) => !schedulerIds.some((id) => String(id) === String(s.id)))
+      );
+      toast.success(`Deleted ${schedulerIds.length} scheduler(s)`);
       return;
     }
-    if (schedulers.length > 0) {
-      schedulerIds.forEach((id) => onDeleteScheduler?.(id));
-    } else {
-      setDemoSchedulerData((prev) => prev.filter((s) => !schedulerIds.includes(s.id)));
-      toast.success(`Deleted ${schedulerIds.length} scheduler(s)`);
+
+    onBulkDeleteSchedulers?.(schedulerIds);
+  };
+
+  const patchDisplayScheduler = (updated: any, options?: { skipToast?: boolean }) => {
+    if (updated?.id == null) return false;
+
+    const schedulerId = String(updated.id);
+    const statusPatch: Record<string, unknown> = {};
+
+    if (Object.prototype.hasOwnProperty.call(updated, 'scheduleIsActive')) {
+      statusPatch.scheduleIsActive = updated.scheduleIsActive;
     }
+    if (updated.lastUsedAt) {
+      statusPatch.lastUsedAt = updated.lastUsedAt;
+    }
+
+    if (schedulers.length > 0) {
+      const existing = schedulers.find((s) => String(s.id) === schedulerId);
+      if (!existing || !onUpdateScheduler) return false;
+      return onUpdateScheduler({ ...existing, ...statusPatch }, options) !== false;
+    }
+
+    let found = false;
+    setDemoSchedulerData((prev) =>
+      prev.map((s) => {
+        if (String(s.id) !== schedulerId) return s;
+        found = true;
+        return { ...s, ...statusPatch };
+      })
+    );
+
+    if (!found) return false;
+
+    if (!options?.skipToast) {
+      toast.success('Scheduler updated successfully');
+    }
+    return true;
   };
 
   // Filter rules
@@ -728,18 +759,7 @@ export function RuleList({ rules, schedulers, onUpdateStatus, onDelete, onUpdate
           <SchedulerList
             schedulers={displaySchedulers}
             onCreateScheduler={onCreateScheduler}
-            onUpdateScheduler={(updated, options) => {
-              if (schedulers.length > 0) {
-                onUpdateScheduler?.(updated, options);
-              } else {
-                setDemoSchedulerData((prev) =>
-                  prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
-                );
-                if (!options?.skipToast) {
-                  toast.success('Scheduler updated successfully');
-                }
-              }
-            }}
+            onUpdateScheduler={(updated, options) => patchDisplayScheduler(updated, options)}
             onDeleteScheduler={(id) => {
               if (schedulers.length > 0) {
                 onDeleteScheduler?.(id);
